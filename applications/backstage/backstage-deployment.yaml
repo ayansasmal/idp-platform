@@ -121,6 +121,8 @@ spec:
           containerPort: 7007
           protocol: TCP
         env:
+        - name: NODE_OPTIONS
+          value: "--no-node-snapshot"
         - name: POSTGRES_HOST
           value: "postgres"
         - name: POSTGRES_PORT
