@@ -1,0 +1,46 @@
+apiVersion: platform.idp/v1alpha1
+kind: WebApplication
+metadata:
+  name: ${{ values.name }}
+  namespace: ${{ values.environment }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    platform.idp/created-by: backstage
+  annotations:
+    backstage.io/managed-by-location: url:${{ values.repoUrl }}
+    backstage.io/managed-by-origin-location: url:${{ values.repoUrl }}
+spec:
+  appName: ${{ values.name }}
+  image:
+    repository: ${{ values.image.split(':')[0] }}
+    tag: ${{ values.image.split(':')[1] or 'latest' }}
+    pullPolicy: IfNotPresent
+  replicas: ${{ values.replicas }}
+  port: ${{ values.port }}
+  environment: ${{ values.environment }}
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  autoscaling:
+    enabled: true
+    minReplicas: ${{ values.replicas }}
+    maxReplicas: ${{ values.replicas * 3 }}
+    targetCPUUtilization: 70
+  ingress:
+    enabled: ${{ values.enableIngress }}
+    hostname: ${{ values.hostname or values.name + '.' + values.environment + '.idp.local' }}
+    tls: true
+  database:
+    enabled: ${{ values.enableDatabase }}
+    type: postgresql
+    size: small
+  monitoring:
+    enabled: true
+    metrics:
+      enabled: true
+      path: "/metrics"
+      port: 9090

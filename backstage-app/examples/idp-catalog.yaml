@@ -1,0 +1,173 @@
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: idp-platform
+  title: IDP Platform
+  description: Integrated Developer Platform for web applications
+  tags:
+    - kubernetes
+    - platform
+    - infrastructure
+spec:
+  owner: platform-team
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: webapp-controller
+  title: WebApplication Controller
+  description: Kubernetes controller for WebApplication CRDs
+  tags:
+    - kubernetes
+    - controller
+    - golang
+  annotations:
+    backstage.io/kubernetes-id: webapp-controller
+    backstage.io/kubernetes-namespace: idp-system
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: idp-platform
+  providesApis:
+    - webapp-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: webapp-api
+  title: WebApplication API
+  description: API for managing WebApplication resources
+  tags:
+    - kubernetes
+    - crd
+spec:
+  type: openapi
+  lifecycle: production
+  owner: platform-team
+  system: idp-platform
+  definition: |
+    openapi: 3.0.0
+    info:
+      title: WebApplication API
+      version: v1alpha1
+      description: API for managing WebApplication resources
+    paths:
+      /apis/platform.idp/v1alpha1/webapplications:
+        get:
+          summary: List WebApplications
+          responses:
+            '200':
+              description: List of WebApplications
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: argocd
+  title: ArgoCD
+  description: GitOps continuous delivery tool
+  tags:
+    - gitops
+    - deployment
+    - kubernetes
+  annotations:
+    backstage.io/kubernetes-id: argocd-server
+    backstage.io/kubernetes-namespace: argocd
+    argocd/app-name: argocd
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: idp-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: crossplane
+  title: Crossplane
+  description: Infrastructure as Code using Kubernetes APIs
+  tags:
+    - infrastructure
+    - kubernetes
+    - crossplane
+  annotations:
+    backstage.io/kubernetes-id: crossplane
+    backstage.io/kubernetes-namespace: crossplane-system
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: idp-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: istio
+  title: Istio Service Mesh
+  description: Service mesh for microservices communication
+  tags:
+    - service-mesh
+    - networking
+    - security
+  annotations:
+    backstage.io/kubernetes-id: istiod
+    backstage.io/kubernetes-namespace: istio-system
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: idp-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: sample-web-app
+  title: Sample Web App
+  description: Sample nginx web application for testing the platform
+  tags:
+    - web
+    - nginx
+    - sample
+  annotations:
+    backstage.io/kubernetes-id: sample-web-app
+    backstage.io/kubernetes-namespace: development
+spec:
+  type: website
+  lifecycle: experimental
+  owner: development-team
+  system: idp-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: localstack
+  title: LocalStack
+  description: Local AWS cloud stack for development
+  tags:
+    - aws
+    - development
+    - localstack
+spec:
+  type: cloud-service
+  owner: platform-team
+  system: idp-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform-team
+  title: Platform Team
+  description: Team responsible for the IDP platform
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: development-team
+  title: Development Team
+  description: Application development team
+spec:
+  type: team
+  children: []

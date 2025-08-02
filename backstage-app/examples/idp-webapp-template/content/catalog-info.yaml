@@ -1,0 +1,24 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  title: ${{ values.name }}
+  description: ${{ values.description }}
+  annotations:
+    backstage.io/kubernetes-id: ${{ values.name }}
+    backstage.io/kubernetes-namespace: ${{ values.environment }}
+    github.com/project-slug: ${{ values.repoUrl | parseRepoUrl | pick('owner') }}/${{ values.repoUrl | parseRepoUrl | pick('repo') }}
+  labels:
+    platform.idp/environment: ${{ values.environment }}
+    platform.idp/type: web-application
+  tags:
+    - web
+    - kubernetes
+    - idp
+spec:
+  type: website
+  lifecycle: ${{ values.environment == 'production' and 'production' or 'experimental' }}
+  owner: ${{ values.owner }}
+  system: idp-platform
+  providesApis: []
+  consumesApis: []
