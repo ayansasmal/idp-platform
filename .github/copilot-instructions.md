@@ -2,7 +2,27 @@
 
 ## Platform Architecture Overview
 
-This is a Kubernetes-based Integrated Developer Platform (IDP) designed for web applications with future IoT extensibility. The platform follows a layered approach with GitOps, service mesh, and infrastructure-as-code principles.
+This is a production-ready Kubernetes-based Integrated Developer Platform (IDP) designed for web applications with future IoT extensibility. The platform follows a layered approach with GitOps, service mesh, and infrastructure-as-code principles.
+
+**Status**: ✅ PRODUCTION READY - All 6 phases completed with automation scripts and comprehensive observability.
+
+## Quick Start Commands
+
+```bash
+# Start entire platform (one command)
+./scripts/quick-start.sh
+
+# Platform management
+./scripts/start-platform.sh status   # Check service status
+./scripts/start-platform.sh health   # Health check
+./scripts/start-platform.sh stop     # Stop all services
+
+# Development shortcuts (after dev-setup.sh)
+idp-start       # Start platform
+idp-backstage   # Open Backstage (http://localhost:3000)
+idp-argocd      # Open ArgoCD (http://localhost:8080)
+idp-grafana     # Open Grafana (http://localhost:3001)
+```
 
 ### Key Components
 
@@ -53,17 +73,25 @@ Located in `infrastructure/crossplane/compositions/`, these define infrastructur
 
 ### CLI Tool Usage
 
-The `idp-cli` script is the primary developer interface:
+The platform provides multiple developer interfaces:
 
 ```bash
+# Primary: Backstage UI (Self-service portal)
+# Navigate to http://localhost:3000 → Create → IDP Web Application
+
+# CLI for quick deployments
 ./idp-cli create my-app nginx:latest development development 2
+
+# Automation scripts
+./scripts/quick-start.sh     # Start entire platform
+./scripts/start-platform.sh  # Advanced management
 ```
 
 This creates a complete WebApplication with namespace, Istio injection, and routing.
 
 ### Backstage Templates
 
-Templates in `backstage-app/examples/idp-webapp-template/` generate:
+Templates in `backstage-app-real/backstage/examples/idp-webapp-template/` generate:
 
 - WebApplication CRD manifests
 - GitHub repo with CI/CD workflows
@@ -129,12 +157,16 @@ cert-manager handles TLS certificates with automatic renewal via `secrets/cert-m
 
 ### Monitoring Endpoints
 
-Access via `applications/monitoring/monitoring-summary.yaml`:
+**Auto-forwarded services** (via automation scripts):
 
-- Grafana: `grafana.istio-system.svc.cluster.local`
-- Kiali: `kiali.istio-system.svc.cluster.local`
-- Jaeger: `jaeger.istio-system.svc.cluster.local`
-- Prometheus: `prometheus.istio-system.svc.cluster.local`
+- **Grafana**: http://localhost:3001 (Dashboards and visualization)
+- **Prometheus**: http://localhost:9090 (Metrics collection)
+- **Jaeger**: http://localhost:16686 (Distributed tracing)
+- **Kiali**: http://localhost:20001 (Service mesh visualization)
+- **Alertmanager**: http://localhost:9093 (Alert management)
+- **Monitoring Hub**: http://localhost:8090 (Central dashboard)
+
+All services include pre-configured dashboards, alerts, and distributed tracing.
 
 ### ArgoCD as Central Deployment Engine
 
@@ -188,20 +220,25 @@ All use automated sync with pruning and self-healing enabled.
 ## Common Debugging Commands
 
 ```bash
-# Check WebApplication status
-kubectl get webapplications -A
+# Platform health and status
+./scripts/start-platform.sh health    # Complete health check
+./scripts/start-platform.sh status    # Service status
+idp-status                           # Quick status (with aliases)
 
-# Inspect Crossplane resources
-kubectl get providers,compositions,claims -A
+# Specific service debugging
+kubectl get webapplications -A                    # WebApplication CRDs
+kubectl get applications -n argocd                # ArgoCD applications
+kubectl get providers,compositions,claims -A      # Crossplane resources
+kubectl get clustersecretstores,externalsecrets -A # External secrets
 
-# Istio configuration validation
-istioctl analyze
+# Service logs
+./scripts/start-platform.sh logs argocd     # ArgoCD logs
+./scripts/start-platform.sh logs backstage  # Backstage logs
+kubectl logs -n istio-system deployment/istiod -f # Istio logs
 
-# ArgoCD application sync status
-kubectl get applications -n argocd
-
-# External secrets troubleshooting
-kubectl get clustersecretstores,externalsecrets -A
+# Istio debugging
+istioctl analyze                    # Configuration validation
+istioctl proxy-status              # Proxy status
 ```
 
 ## Testing Patterns

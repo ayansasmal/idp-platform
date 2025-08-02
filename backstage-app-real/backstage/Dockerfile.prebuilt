@@ -1,0 +1,28 @@
+# Dockerfile for pre-built Backstage app
+FROM node:20-slim
+
+# Install minimal dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy package files first for better caching
+COPY package.json yarn.lock .yarnrc.yml ./
+COPY .yarn ./.yarn
+
+# Install only production dependencies
+ENV NODE_ENV=production
+RUN yarn workspaces focus --all --production
+
+# Copy the built application
+COPY . .
+
+# Expose port 7007 for backend
+EXPOSE 7007
+
+# Start the backend
+CMD ["node", "packages/backend", "--config", "app-config.idp.yaml"]

@@ -1,17 +1,9 @@
 app:
-  title: IDP Platform Portal
+  title: Scaffolded Backstage App
   baseUrl: http://localhost:3000
-  support:
-    url: https://github.com/your-org/idp-platform/issues
-    items:
-      - title: Issues
-        icon: github
-        links:
-          - url: https://github.com/your-org/idp-platform/issues
-            title: GitHub Issues
 
 organization:
-  name: IDP Platform
+  name: My Company
 
 backend:
   # Used for enabling authentication, secret is shared by all backend plugins
@@ -52,17 +44,12 @@ integrations:
     #   token: ${GHE_TOKEN}
 
 proxy:
-  endpoints:
-    '/argocd/api':
-      target: https://localhost:8080/api/v1/
-      changeOrigin: true
-      secure: false
-      headers:
-        Cookie: ${ARGOCD_AUTH_TOKEN}
-    '/kubernetes-api':
-      target: https://kubernetes.default.svc
-      changeOrigin: true
-      secure: false
+  ### Example for how to add a proxy endpoint for the frontend.
+  ### A typical reason to do this is to handle HTTPS and CORS for internal services.
+  # endpoints:
+  #   '/test':
+  #     target: 'https://example.com'
+  #     changeOrigin: true
 
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration
 # Note: After experimenting with basic setup, use CI/CD to generate docs
@@ -89,19 +76,9 @@ catalog:
     entityFilename: catalog-info.yaml
     pullRequestBranchName: backstage-integration
   rules:
-    - allow: [Component, System, API, Resource, Location, User, Group]
+    - allow: [Component, System, API, Resource, Location]
   locations:
-    # IDP Platform catalog
-    - type: file
-      target: ../../examples/idp-catalog.yaml
-
-    # IDP WebApplication template
-    - type: file
-      target: ../../examples/idp-webapp-template/template.yaml
-      rules:
-        - allow: [Template]
-
-    # Original example data
+    # Local example data, file locations are relative to the backend process, typically `packages/backend`
     - type: file
       target: ../../examples/entities.yaml
 
@@ -128,16 +105,7 @@ catalog:
     #     - allow: [User, Group]
 
 kubernetes:
-  serviceLocatorMethod:
-    type: 'multiTenant'
-  clusterLocatorMethods:
-    - type: 'config'
-      clusters:
-        - url: https://kubernetes.default.svc
-          name: local-cluster
-          authProvider: 'serviceAccount'
-          skipTLSVerify: true
-          skipMetricsLookup: false
+  # see https://backstage.io/docs/features/kubernetes/configuration for kubernetes configuration options
 
 # see https://backstage.io/docs/permissions/getting-started for more on the permission framework
 permission:

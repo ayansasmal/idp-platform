@@ -81,40 +81,40 @@ spec:
     spec:
       serviceAccountName: fluentd
       tolerations:
-      - key: node-role.kubernetes.io/master
-        effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
       containers:
-      - name: fluentd
-        image: fluent/fluentd-kubernetes-daemonset:v1-debian-loki
-        env:
-        - name: FLUENT_CONF
-          value: "fluent.conf"
-        resources:
-          limits:
-            memory: 200Mi
-          requests:
-            cpu: 100m
-            memory: 200Mi
-        volumeMounts:
-        - name: varlog
-          mountPath: /var/log
-        - name: varlibdockercontainers
-          mountPath: /var/lib/docker/containers
-          readOnly: true
-        - name: config
-          mountPath: /fluentd/etc/fluent.conf
-          subPath: fluent.conf
+        - name: fluentd
+          image: fluent/fluentd-kubernetes-daemonset:v1.16-debian-1
+          env:
+            - name: FLUENT_CONF
+              value: "fluent.conf"
+          resources:
+            limits:
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 200Mi
+          volumeMounts:
+            - name: varlog
+              mountPath: /var/log
+            - name: varlibdockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+            - name: config
+              mountPath: /fluentd/etc/fluent.conf
+              subPath: fluent.conf
       terminationGracePeriodSeconds: 30
       volumes:
-      - name: varlog
-        hostPath:
-          path: /var/log
-      - name: varlibdockercontainers
-        hostPath:
-          path: /var/lib/docker/containers
-      - name: config
-        configMap:
-          name: fluentd-config
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+        - name: config
+          configMap:
+            name: fluentd-config
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -127,15 +127,15 @@ kind: ClusterRole
 metadata:
   name: fluentd
 rules:
-- apiGroups:
-  - ""
-  resources:
-  - pods
-  - namespaces
-  verbs:
-  - get
-  - list
-  - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - namespaces
+    verbs:
+      - get
+      - list
+      - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -146,6 +146,6 @@ roleRef:
   name: fluentd
   apiGroup: rbac.authorization.k8s.io
 subjects:
-- kind: ServiceAccount
-  name: fluentd
-  namespace: istio-system
+  - kind: ServiceAccount
+    name: fluentd
+    namespace: istio-system

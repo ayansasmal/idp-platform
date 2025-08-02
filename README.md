@@ -23,28 +23,74 @@ A comprehensive Kubernetes-based Integrated Developer Platform designed for web 
 
 ## 🚀 Quick Start
 
-### Prerequisites
-
-- Kubernetes cluster (local: Kind/Minikube, cloud: EKS/GKE/AKS)
-- kubectl configured
-- Docker (for LocalStack)
-- Git
-
-### 1. Clone Repository
+**One-command platform startup:**
 
 ```bash
-git clone https://github.com/ayansasmal/idp-platform.git
+# Clone the repository
+git clone https://github.com/your-org/idp-platform.git
 cd idp-platform
+
+# Setup development environment (first time only)
+./scripts/dev-setup.sh
+
+# Start the entire platform
+./scripts/quick-start.sh
 ```
 
-### 2. Install ArgoCD (One-time setup)
+**That's it!** Your IDP platform will be running with all services accessible via browser.
+
+## 📊 Access Your Services
+
+Once started, access your platform services:
+
+- **ArgoCD (GitOps)**: http://localhost:8080
+- **Backstage (Developer Portal)**: http://localhost:3000
+- **Grafana (Monitoring)**: http://localhost:3001
+- **Prometheus (Metrics)**: http://localhost:9090
+- **Jaeger (Tracing)**: http://localhost:16686
+- **Kiali (Service Mesh)**: http://localhost:20001
+- **Monitoring Dashboard**: http://localhost:8090
+
+## 🔐 Default Credentials
+
+- **ArgoCD**: admin / `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d`
+- **Grafana**: admin / admin
+
+## ⚡ Quick Commands
+
+```bash
+# Platform management
+idp-start          # Start all services
+idp-stop           # Stop all services  
+idp-status         # Check service status
+idp-health         # Platform health check
+idp-restart        # Restart all services
+
+# Service access shortcuts
+idp-argocd         # Open ArgoCD
+idp-backstage      # Open Backstage
+idp-grafana        # Open Grafana
+```
+
+## 📋 Prerequisites
+
+- **Kubernetes cluster** (Docker Desktop, Kind, or Minikube)
+- **kubectl** configured with cluster access
+- **Docker** for container operations
+- **Helm** for package management (optional)
+
+## 🔧 Manual Setup (Advanced)
+
+If you prefer manual setup or need to understand the underlying components:
+
+### 1. Install ArgoCD (One-time setup)
 
 ```bash
 kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 ```
 
-### 3. Bootstrap Platform via GitOps
+### 2. Bootstrap Platform via GitOps
 
 ```bash
 # Apply ArgoCD configuration
@@ -55,30 +101,19 @@ kubectl apply -f applications/infrastructure/core-infrastructure-apps.yaml
 
 # Apply platform services
 kubectl apply -f applications/platform/platform-services-apps.yaml
-
-# Apply ArgoCD self-management
-kubectl apply -f applications/argocd/argocd-self-app.yaml
 ```
 
-### 4. Access ArgoCD UI
+### 3. Manual Port Forwarding
 
 ```bash
-# Port forward ArgoCD
-kubectl port-forward service/argocd-server -n argocd 8080:443
+# ArgoCD
+kubectl port-forward -n argocd svc/argocd-server 8080:80
 
-# Get admin password
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
-```
+# Backstage
+kubectl port-forward -n backstage svc/backstage 3000:80
 
-Access at: https://localhost:8080 (username: `admin`)
-
-### 5. Deploy Sample Application
-
-```bash
-# Use the IDP CLI
-./idp-cli create my-app nginx:latest development development 2
-
-# Or use Backstage templates (after Backstage is deployed)
+# Grafana
+kubectl port-forward -n istio-system svc/grafana 3001:3000
 ```
 
 ## 📁 Repository Structure
@@ -131,11 +166,11 @@ idp-platform/
 ### Create New Application
 
 ```bash
-# Option 1: CLI
-./idp-cli create app-name image:tag namespace environment replicas
+# Option 1: Backstage Template (Recommended - Web UI)
+# Navigate to http://localhost:3000 → Create → IDP Web Application
 
-# Option 2: Backstage Template (Web UI)
-# Navigate to Backstage → Create → IDP Web Application
+# Option 2: CLI (Quick deployment)
+./idp-cli create app-name image:tag namespace environment replicas
 
 # Option 3: Direct WebApplication CRD
 kubectl apply -f - <<EOF
@@ -152,6 +187,20 @@ spec:
   replicas: 2
   environment: development
 EOF
+```
+
+### Development Commands
+
+```bash
+# Platform management
+./scripts/quick-start.sh      # Start entire platform
+./scripts/start-platform.sh status  # Check all services
+./scripts/start-platform.sh logs argocd  # View service logs
+./scripts/start-platform.sh health   # Health check
+
+# Individual service management
+./scripts/start-platform.sh start argocd backstage  # Start specific services
+./scripts/start-platform.sh stop     # Stop all services
 ```
 
 ### Local Development with LocalStack
@@ -174,12 +223,30 @@ Git-based promotion through ArgoCD:
 
 ## 🔍 Observability & Monitoring
 
-Access monitoring tools via Istio gateway:
+The platform includes a complete observability stack with automatic port forwarding:
 
-- **Grafana**: `grafana.istio-system.svc.cluster.local`
-- **Kiali**: `kiali.istio-system.svc.cluster.local`
-- **Jaeger**: `jaeger.istio-system.svc.cluster.local`
-- **Prometheus**: `prometheus.istio-system.svc.cluster.local`
+### Monitoring Services (Auto-forwarded)
+
+- **Grafana**: http://localhost:3001 (Dashboards and visualization)
+- **Prometheus**: http://localhost:9090 (Metrics collection)  
+- **Jaeger**: http://localhost:16686 (Distributed tracing)
+- **Kiali**: http://localhost:20001 (Service mesh visualization)
+- **Alertmanager**: http://localhost:9093 (Alert management)
+- **Monitoring Hub**: http://localhost:8090 (Central dashboard)
+
+### Pre-configured Dashboards
+
+- **Platform Overview**: Overall health and performance
+- **WebApplication Metrics**: Per-application monitoring
+- **ArgoCD Dashboard**: GitOps deployment status
+- **Istio Service Mesh**: Traffic flow and security
+
+### Built-in Alerts
+
+- High error rates (>5%)
+- High latency (P95 >1s)
+- Application down alerts
+- Resource utilization warnings
 
 ## 🏷️ Platform Conventions
 
