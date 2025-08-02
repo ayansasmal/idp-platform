@@ -6,7 +6,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: idp-platform
   source:
     repoURL: https://argoproj.github.io/argo-helm
     chart: argo-workflows
