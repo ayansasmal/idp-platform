@@ -16,57 +16,45 @@ spec:
       labels:
         app.kubernetes.io/name: backstage
       annotations:
-        sidecar.istio.io/inject: "false"  # Disable Istio for now
+        sidecar.istio.io/inject: "false" # Disable Istio for now
     spec:
       serviceAccountName: backstage
       containers:
-      - name: backstage
-        image: backstage/backstage:latest
-        imagePullPolicy: IfNotPresent
-        ports:
-        - name: http
-          containerPort: 7007
-          protocol: TCP
-        env:
-        - name: POSTGRES_HOST
-          value: "127.0.0.1"
-        - name: POSTGRES_PORT
-          value: "5432"
-        - name: POSTGRES_USER
-          value: "backstage"
-        - name: POSTGRES_PASSWORD
-          value: "backstage"
-        - name: APP_CONFIG_backend_database_client
-          value: "better-sqlite3"
-        - name: APP_CONFIG_backend_database_connection
-          value: ":memory:"
-        - name: APP_CONFIG_app_baseUrl
-          value: "http://localhost:7007"
-        - name: APP_CONFIG_backend_baseUrl
-          value: "http://localhost:7007"
-        - name: APP_CONFIG_auth_providers_guest_dangerouslyAllowOutsideDevelopment
-          value: "true"
-        resources:
-          requests:
-            cpu: 100m
-            memory: 256Mi
-          limits:
-            cpu: 1000m
-            memory: 1Gi
-        livenessProbe:
-          httpGet:
-            path: /healthcheck
-            port: http
-          initialDelaySeconds: 60
-          periodSeconds: 30
-          timeoutSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /healthcheck
-            port: http
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
+        - name: backstage
+          image: nginx:alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-content
+              mountPath: /usr/share/nginx/html
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: nginx-content
+          configMap:
+            name: backstage-ui-content
 ---
 apiVersion: v1
 kind: ConfigMap
