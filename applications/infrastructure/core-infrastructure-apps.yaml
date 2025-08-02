@@ -8,7 +8,7 @@ metadata:
 spec:
   project: idp-platform
   source:
-    repoURL: https://github.com/your-username/idp-platform
+    repoURL: https://github.com/ayansasmal/idp-platform
     targetRevision: HEAD
     path: infrastructure/crossplane
   destination:
@@ -37,7 +37,7 @@ metadata:
 spec:
   project: idp-platform
   source:
-    repoURL: https://github.com/your-username/idp-platform
+    repoURL: https://github.com/ayansasmal/idp-platform
     targetRevision: HEAD
     path: infrastructure/istio
   destination:
@@ -61,7 +61,7 @@ metadata:
 spec:
   project: idp-platform
   source:
-    repoURL: https://github.com/your-username/idp-platform
+    repoURL: https://github.com/ayansasmal/idp-platform
     targetRevision: HEAD
     path: secrets/external-secrets
   destination:

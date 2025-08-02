@@ -9,7 +9,7 @@ spec:
   project: idp-platform
   source:
     path: applications
-    repoURL: https://github.com/your-username/idp-platform
+    repoURL: https://github.com/ayansasmal/idp-platform
     targetRevision: HEAD
   destination:
     server: https://kubernetes.default.svc
@@ -28,7 +28,7 @@ metadata:
 spec:
   description: IDP Platform Applications
   sourceRepos:
-    - "https://github.com/your-username/idp-platform"
+    - "https://github.com/ayansasmal/idp-platform"
     - "https://charts.crossplane.io/stable"
     - "https://istio-release.storage.googleapis.com/charts"
     - "https://external-secrets.github.io/external-secrets"

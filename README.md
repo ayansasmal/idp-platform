@@ -5,14 +5,16 @@ A comprehensive Kubernetes-based Integrated Developer Platform designed for web 
 ## 🏗️ Architecture Overview
 
 ### Core Components
+
 - **ArgoCD**: GitOps-based continuous deployment (central deployment engine)
-- **Crossplane**: Infrastructure as Code with LocalStack for local development  
+- **Crossplane**: Infrastructure as Code with LocalStack for local development
 - **Istio**: Service mesh for traffic management, security (mTLS), and observability
 - **Backstage**: Developer portal with self-service templates
 - **External Secrets Operator**: Kubernetes secrets management
 - **Custom CRDs**: Platform abstractions (`WebApplication` CRD)
 
 ### Key Features
+
 - **GitOps-First**: Everything deployed via ArgoCD App-of-Apps pattern
 - **Multi-Environment**: Local (LocalStack) → Staging → Production
 - **Self-Service**: Backstage templates for application scaffolding
@@ -22,24 +24,28 @@ A comprehensive Kubernetes-based Integrated Developer Platform designed for web 
 ## 🚀 Quick Start
 
 ### Prerequisites
+
 - Kubernetes cluster (local: Kind/Minikube, cloud: EKS/GKE/AKS)
 - kubectl configured
 - Docker (for LocalStack)
 - Git
 
 ### 1. Clone Repository
+
 ```bash
-git clone https://github.com/your-username/idp-platform.git
+git clone https://github.com/ayansasmal/idp-platform.git
 cd idp-platform
 ```
 
 ### 2. Install ArgoCD (One-time setup)
+
 ```bash
 kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 ```
 
 ### 3. Bootstrap Platform via GitOps
+
 ```bash
 # Apply ArgoCD configuration
 kubectl apply -f applications/argocd/argocd-apps.yaml
@@ -55,6 +61,7 @@ kubectl apply -f applications/argocd/argocd-self-app.yaml
 ```
 
 ### 4. Access ArgoCD UI
+
 ```bash
 # Port forward ArgoCD
 kubectl port-forward service/argocd-server -n argocd 8080:443
@@ -66,6 +73,7 @@ kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.pas
 Access at: https://localhost:8080 (username: `admin`)
 
 ### 5. Deploy Sample Application
+
 ```bash
 # Use the IDP CLI
 ./idp-cli create my-app nginx:latest development development 2
@@ -105,20 +113,23 @@ idp-platform/
 ## 🔄 GitOps Deployment Flow
 
 ### ArgoCD App-of-Apps Hierarchy
+
 1. **Root**: `argocd-apps.yaml` manages all platform applications
 2. **Infrastructure Layer**: Crossplane, Istio, External Secrets, cert-manager
 3. **Platform Layer**: Backstage, monitoring stack, ArgoCD UI
 4. **Workload Layer**: User applications via Backstage templates
 
 ### Deployment Order (Automatic via ArgoCD)
+
 1. Core infrastructure (Crossplane, External Secrets)
-2. Service mesh (Istio control plane, gateways)  
+2. Service mesh (Istio control plane, gateways)
 3. Platform services (Backstage, monitoring)
 4. Application workloads
 
 ## 🛠️ Development Workflows
 
 ### Create New Application
+
 ```bash
 # Option 1: CLI
 ./idp-cli create app-name image:tag namespace environment replicas
@@ -144,6 +155,7 @@ EOF
 ```
 
 ### Local Development with LocalStack
+
 ```bash
 # Start LocalStack
 ./infrastructure/localstack/docker-config.sh
@@ -153,7 +165,9 @@ EOF
 ```
 
 ### Multi-Environment Promotion
+
 Git-based promotion through ArgoCD:
+
 1. **Development**: Direct commits to `main` branch
 2. **Staging**: Tags or `staging` branch
 3. **Production**: Release tags or `production` branch
@@ -161,24 +175,28 @@ Git-based promotion through ArgoCD:
 ## 🔍 Observability & Monitoring
 
 Access monitoring tools via Istio gateway:
+
 - **Grafana**: `grafana.istio-system.svc.cluster.local`
-- **Kiali**: `kiali.istio-system.svc.cluster.local`  
+- **Kiali**: `kiali.istio-system.svc.cluster.local`
 - **Jaeger**: `jaeger.istio-system.svc.cluster.local`
 - **Prometheus**: `prometheus.istio-system.svc.cluster.local`
 
 ## 🏷️ Platform Conventions
 
 ### Mandatory Labels
+
 All resources must include:
+
 ```yaml
 labels:
-  app.kubernetes.io/name: "app-identifier"
-  platform.idp/environment: "development|staging|production"
-  platform.idp/type: "web-application|database|etc"
-  app.kubernetes.io/managed-by: "idp-platform"
+  app.kubernetes.io/name: 'app-identifier'
+  platform.idp/environment: 'development|staging|production'
+  platform.idp/type: 'web-application|database|etc'
+  app.kubernetes.io/managed-by: 'idp-platform'
 ```
 
 ### Istio Integration
+
 - All pods get `sidecar.istio.io/inject: "true"`
 - VirtualServices follow pattern: `{app-name}.{environment}.idp.local`
 - mTLS enforced cluster-wide
@@ -186,6 +204,7 @@ labels:
 ## 🔧 Troubleshooting
 
 ### Check Platform Status
+
 ```bash
 # ArgoCD applications
 kubectl get applications -n argocd
@@ -204,6 +223,7 @@ kubectl get clustersecretstores,externalsecrets -A
 ```
 
 ### Common Issues
+
 1. **Applications stuck in "Unknown" sync**: Check repository access and credentials
 2. **Istio sidecar not injecting**: Verify namespace has `istio-injection=enabled`
 3. **External Secrets failing**: Check LocalStack connectivity or AWS credentials
@@ -227,7 +247,7 @@ Changes will be automatically deployed via ArgoCD GitOps.
 ## 🔮 Future Roadmap
 
 - **IoT Integration**: MQTT support, edge deployments
-- **Multi-Cluster**: ArgoCD ApplicationSets for cluster fleet management  
+- **Multi-Cluster**: ArgoCD ApplicationSets for cluster fleet management
 - **Advanced Security**: OPA/Gatekeeper policies, Falco runtime security
 - **AI/ML Workloads**: Kubeflow integration, GPU scheduling
 

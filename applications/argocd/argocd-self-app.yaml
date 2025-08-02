@@ -8,7 +8,7 @@ metadata:
 spec:
   project: idp-platform
   source:
-    repoURL: https://github.com/your-username/idp-platform
+    repoURL: https://github.com/ayansasmal/idp-platform
     targetRevision: HEAD
     path: applications/argocd
     directory:
