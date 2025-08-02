@@ -3,7 +3,7 @@
 # IDP Platform Startup Script
 # This script starts all port forwards for easy development access
 
-set -e
+# Note: We don't use 'set -e' here to allow graceful handling of service failures
 
 # Colors for output
 RED='\033[0;31m'
@@ -16,17 +16,25 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIDS_FILE="${SCRIPT_DIR}/.port-forward-pids"
 
-# Service configurations
-declare -A SERVICES=(
-    ["argocd"]="argocd:argocd-server:8080:80"
-    ["backstage"]="backstage:backstage:3000:80"
-    ["grafana"]="istio-system:grafana:3001:3000"
-    ["prometheus"]="istio-system:prometheus:9090:9090"
-    ["jaeger"]="istio-system:jaeger-query:16686:16686"
-    ["kiali"]="istio-system:kiali:20001:20001"
-    ["monitoring"]="istio-system:monitoring-dashboard:8090:80"
-    ["alertmanager"]="istio-system:alertmanager:9093:9093"
-)
+# Service configurations  
+get_service_config() {
+    case "$1" in
+        "argocd") echo "argocd:argocd-server:8080:80" ;;
+        "backstage") echo "backstage:backstage:3000:80" ;;
+        "grafana") echo "istio-system:grafana:3001:3000" ;;
+        "prometheus") echo "istio-system:prometheus:9090:9090" ;;
+        "jaeger") echo "istio-system:tracing:16686:80" ;;
+        "kiali") echo "istio-system:kiali:20001:20001" ;;
+        "monitoring") echo "istio-system:monitoring-dashboard:8090:80" ;;
+        "alertmanager") echo "istio-system:alertmanager:9093:9093" ;;
+        *) echo "" ;;
+    esac
+}
+
+# Get all service names
+get_all_services() {
+    echo "argocd backstage grafana prometheus jaeger kiali monitoring alertmanager"
+}
 
 # Help function
 show_help() {
@@ -43,8 +51,9 @@ show_help() {
     echo "  health             Check platform health"
     echo ""
     echo "Available services:"
-    for service in "${!SERVICES[@]}"; do
-        IFS=':' read -r namespace svc local_port remote_port <<< "${SERVICES[$service]}"
+    for service in $(get_all_services); do
+        local config=$(get_service_config "$service")
+        IFS=':' read -r namespace svc local_port remote_port <<< "$config"
         echo "  ${service} - http://localhost:${local_port}"
     done
     echo ""
@@ -99,7 +108,7 @@ wait_for_service() {
 # Start port forward for a service
 start_port_forward() {
     local service_name=$1
-    local config=${SERVICES[$service_name]}
+    local config=$(get_service_config "$service_name")
     
     if [[ -z "$config" ]]; then
         echo -e "${RED}Error: Unknown service '$service_name'${NC}"
@@ -110,8 +119,11 @@ start_port_forward() {
     
     # Check if port is already in use
     if lsof -Pi :$local_port -sTCP:LISTEN -t &> /dev/null; then
-        echo -e "${YELLOW}Port $local_port already in use, skipping $service_name${NC}"
-        return 1
+        echo -e "${YELLOW}Port $local_port already in use for $service_name${NC}"
+        # Store PID anyway since service might be running from previous session
+        local existing_pid=$(lsof -Pi :$local_port -sTCP:LISTEN -t)
+        echo "$service_name:$existing_pid:$local_port" >> "$PIDS_FILE"
+        return 0
     fi
     
     # Wait for service to be ready
@@ -218,8 +230,9 @@ check_health() {
     # Check service availability
     echo ""
     echo "Service Availability:"
-    for service_name in "${!SERVICES[@]}"; do
-        IFS=':' read -r namespace svc local_port remote_port <<< "${SERVICES[$service_name]}"
+    for service_name in $(get_all_services); do
+        local config=$(get_service_config "$service_name")
+        IFS=':' read -r namespace svc local_port remote_port <<< "$config"
         if kubectl get svc -n "$namespace" "$svc" &> /dev/null; then
             local ready=$(kubectl get pods -n "$namespace" -l app.kubernetes.io/name="$svc" --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)
             if [[ $ready -gt 0 ]]; then
@@ -239,11 +252,11 @@ show_logs() {
     
     if [[ -z "$service_name" ]]; then
         echo -e "${RED}Error: Please specify a service name${NC}"
-        echo "Available services: ${!SERVICES[*]}"
+        echo "Available services: $(get_all_services)"
         return 1
     fi
     
-    local config=${SERVICES[$service_name]}
+    local config=$(get_service_config "$service_name")
     if [[ -z "$config" ]]; then
         echo -e "${RED}Error: Unknown service '$service_name'${NC}"
         return 1
@@ -275,7 +288,7 @@ main() {
                 stop_port_forwards
                 
                 local started_count=0
-                for service_name in "${!SERVICES[@]}"; do
+                for service_name in $(get_all_services); do
                     if start_port_forward "$service_name"; then
                         ((started_count++))
                     fi
@@ -285,8 +298,9 @@ main() {
                 echo -e "${GREEN}Started $started_count services${NC}"
                 echo ""
                 echo -e "${BLUE}Access your services:${NC}"
-                for service_name in "${!SERVICES[@]}"; do
-                    IFS=':' read -r namespace svc local_port remote_port <<< "${SERVICES[$service_name]}"
+                for service_name in $(get_all_services); do
+                    local config=$(get_service_config "$service_name")
+                    IFS=':' read -r namespace svc local_port remote_port <<< "$config"
                     echo -e "  ${service_name}: ${GREEN}http://localhost:${local_port}${NC}"
                 done
                 echo ""

@@ -3,7 +3,7 @@
 # IDP Platform Quick Start Script
 # One-command platform startup with health checks
 
-set -e
+# Note: We handle errors explicitly rather than using 'set -e' to provide better user feedback
 
 # Colors
 RED='\033[0;31m'
@@ -67,7 +67,7 @@ check_port() {
 }
 
 # Check critical services
-declare -A CRITICAL_SERVICES=(
+declare CRITICAL_SERVICES=(
     ["8080"]="ArgoCD"
     ["3000"]="Backstage"
     ["3001"]="Grafana"
