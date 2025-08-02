@@ -127,7 +127,9 @@ The Integrated Developer Platform (IDP) is a comprehensive Kubernetes-based plat
 
 #### Container Registry
 - **Production**: AWS ECR
-- **Local**: LocalStack ECR emulation
+- **Local**: LocalStack ECR emulation (active)
+- **Current Images**: `idp/backstage-app:latest` (real Backstage application)
+- **Registry**: `000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566`
 - **Security**: Image vulnerability scanning
 - **Caching**: Multi-layer caching for efficiency
 

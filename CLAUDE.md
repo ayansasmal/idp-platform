@@ -19,7 +19,10 @@ This document outlines the complete architecture and implementation of a product
 ### Container Registry
 
 - **AWS ECR**: Production container registry
-- **LocalStack ECR**: Local development container registry
+- **LocalStack ECR**: Local development container registry (active)
+- **Current Images**: 
+  - `idp/backstage-app:latest` - Real Backstage application (deployed)
+  - Registry: `000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566`
 - Unified workflow across environments
 
 ### CI/CD Pipeline
@@ -38,7 +41,11 @@ This document outlines the complete architecture and implementation of a product
 
 ### Developer Experience
 
-- **Backstage**: Developer portal and service catalog
+- **Backstage**: Real developer portal and service catalog (active at localhost:3000)
+  - Production-ready TypeScript/Node.js application
+  - PostgreSQL database integration
+  - Built from source and containerized
+  - Deployed via ArgoCD GitOps
 - **Custom CRDs**: Platform abstractions (WebApplication, etc.)
 - **Software Templates**: Self-service application scaffolding
 - **Multi-environment**: Seamless local to production workflows
@@ -90,6 +97,9 @@ High-level abstraction that generates:
 
 ### ✅ Phase 5: Developer Experience (COMPLETED)
 - ✅ Backstage developer portal deployed (real application)
+- ✅ Real Backstage app built and containerized
+- ✅ Docker image pushed to LocalStack ECR
+- ✅ Production-ready deployment via ArgoCD
 - ✅ Software templates for self-service
 - ✅ Service catalog and documentation
 - ✅ PostgreSQL database integration

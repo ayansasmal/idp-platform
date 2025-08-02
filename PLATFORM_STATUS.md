@@ -35,7 +35,9 @@
 - **IDP CLI**: Command-line interface for developers
 
 ### ✅ Phase 5: Developer Experience (COMPLETED)
-- **Backstage**: Real production-grade developer portal
+- **Backstage**: Real production-grade developer portal (verified running)
+- **Docker Images**: Built and deployed from LocalStack ECR
+- **Container Registry**: `idp/backstage-app:latest` (302MB, Node.js 20)
 - **Software Templates**: Self-service application scaffolding
 - **Service Catalog**: Application and service discovery
 - **PostgreSQL**: Database integration with persistence
