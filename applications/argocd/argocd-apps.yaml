@@ -8,9 +8,9 @@ metadata:
 spec:
   project: idp-platform
   source:
-    repoURL: https://github.com/your-org/idp-platform
-    targetRevision: HEAD
     path: applications
+    repoURL: https://github.com/your-username/idp-platform
+    targetRevision: HEAD
   destination:
     server: https://kubernetes.default.svc
   syncPolicy:
@@ -28,7 +28,7 @@ metadata:
 spec:
   description: IDP Platform Applications
   sourceRepos:
-    - "https://github.com/your-org/idp-platform"
+    - "https://github.com/your-username/idp-platform"
     - "https://charts.crossplane.io/stable"
     - "https://istio-release.storage.googleapis.com/charts"
     - "https://external-secrets.github.io/external-secrets"

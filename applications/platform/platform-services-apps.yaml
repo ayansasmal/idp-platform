@@ -8,7 +8,7 @@ metadata:
 spec:
   project: idp-platform
   source:
-    repoURL: https://github.com/your-org/idp-platform
+    repoURL: https://github.com/your-username/idp-platform
     targetRevision: HEAD
     path: applications/backstage
   destination:
@@ -31,7 +31,7 @@ metadata:
 spec:
   project: idp-platform
   source:
-    repoURL: https://github.com/your-org/idp-platform
+    repoURL: https://github.com/your-username/idp-platform
     targetRevision: HEAD
     path: applications/monitoring
   destination:
@@ -54,7 +54,7 @@ metadata:
 spec:
   project: idp-platform
   source:
-    repoURL: https://github.com/your-org/idp-platform
+    repoURL: https://github.com/your-username/idp-platform
     targetRevision: HEAD
     path: applications/argocd
     directory:
