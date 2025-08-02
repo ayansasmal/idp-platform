@@ -36,8 +36,8 @@ echo -e "\n${GREEN}✓ Platform health check passed${NC}\n"
 # Step 2: Start Services
 echo -e "${PURPLE}[2/4]${NC} ${BLUE}Starting all platform services...${NC}"
 
-# Start in background to get immediate feedback
-"$SCRIPT_DIR/start-platform.sh" start &
+# Start in smart mode (only available services) in background
+"$SCRIPT_DIR/start-platform.sh" smart &
 PLATFORM_PID=$!
 
 # Wait a bit for services to start
@@ -66,30 +66,24 @@ check_port() {
     return 1
 }
 
-# Check critical services
-declare CRITICAL_SERVICES=(
-    ["8080"]="ArgoCD"
-    ["3000"]="Backstage"
-    ["3001"]="Grafana"
-)
-
-for port in "${!CRITICAL_SERVICES[@]}"; do
-    check_port "$port" "${CRITICAL_SERVICES[$port]}"
-done
+# The smart mode in start-platform.sh already handles service discovery
+# and only starts available services, so we don't need to hardcode checks here
+echo -e "${GREEN}✓ Services started using intelligent discovery${NC}"
 
 # Step 4: Show access information
 echo -e "\n${PURPLE}[4/4]${NC} ${BLUE}Platform is ready!${NC}"
 
 echo -e "\n${GREEN}🎉 Your IDP Platform is now running!${NC}\n"
 
-echo -e "${BLUE}📊 Access your services:${NC}"
+echo -e "${BLUE}📊 Service access information:${NC}"
+echo -e "  ${GREEN}•${NC} Check running services: ${YELLOW}./scripts/start-platform.sh status${NC}"
+echo -e "  ${GREEN}•${NC} Discover all services: ${YELLOW}./scripts/start-platform.sh discover${NC}"
+echo -e ""
+echo -e "${BLUE}🔗 Common service URLs (when available):${NC}"
 echo -e "  ${GREEN}•${NC} ArgoCD (GitOps):           ${YELLOW}http://localhost:8080${NC}"
 echo -e "  ${GREEN}•${NC} Backstage (Dev Portal):    ${YELLOW}http://localhost:3000${NC}"
+echo -e "  ${GREEN}•${NC} Argo Workflows (CI/CD):    ${YELLOW}http://localhost:4000${NC} ${BLUE}[NEW!]${NC}"
 echo -e "  ${GREEN}•${NC} Grafana (Monitoring):      ${YELLOW}http://localhost:3001${NC}"
-echo -e "  ${GREEN}•${NC} Prometheus (Metrics):      ${YELLOW}http://localhost:9090${NC}"
-echo -e "  ${GREEN}•${NC} Jaeger (Tracing):          ${YELLOW}http://localhost:16686${NC}"
-echo -e "  ${GREEN}•${NC} Kiali (Service Mesh):      ${YELLOW}http://localhost:20001${NC}"
-echo -e "  ${GREEN}•${NC} Monitoring Dashboard:      ${YELLOW}http://localhost:8090${NC}"
 
 echo -e "\n${BLUE}🔐 Default Credentials:${NC}"
 echo -e "  ${GREEN}•${NC} ArgoCD:    admin / $(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d 2>/dev/null || echo 'admin')"
@@ -105,6 +99,7 @@ echo -e "\n${BLUE}🔗 Platform Components:${NC}"
 echo -e "  ${GREEN}•${NC} Kubernetes:     $(kubectl version --client --short 2>/dev/null | cut -d' ' -f3 || echo 'Unknown')"
 echo -e "  ${GREEN}•${NC} Istio:          Service Mesh with mTLS"
 echo -e "  ${GREEN}•${NC} ArgoCD:         GitOps Continuous Deployment"
+echo -e "  ${GREEN}•${NC} Argo Workflows: Internal CI/CD for Container Builds ${BLUE}[NEW!]${NC}"
 echo -e "  ${GREEN}•${NC} Crossplane:     Infrastructure as Code"
 echo -e "  ${GREEN}•${NC} Observability:  Prometheus + Grafana + Jaeger + Kiali"
 

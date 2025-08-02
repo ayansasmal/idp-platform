@@ -1,0 +1,39 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: argo-workflows-ui
+  namespace: argo-workflows
+  labels:
+    app: argo-workflows
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - istio-system/main-gateway
+  http:
+  - match:
+    - uri:
+        prefix: "/workflows"
+    rewrite:
+      uri: "/"
+    route:
+    - destination:
+        host: argo-server.argo-workflows.svc.cluster.local
+        port:
+          number: 2746
+  - match:
+    - uri:
+        exact: "/workflows"
+    redirect:
+      uri: "/workflows/"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: argo-workflows-dr
+  namespace: argo-workflows
+spec:
+  host: argo-server.argo-workflows.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL

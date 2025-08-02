@@ -27,7 +27,8 @@ All services are running correctly! The platform now includes comprehensive auto
 
 **All services automatically accessible at:**
 - **ArgoCD**: http://localhost:8080
-- **Backstage**: http://localhost:3000  
+- **Backstage**: http://localhost:3000
+- **Argo Workflows**: http://localhost:4000 (NEW! - Container CI/CD)  
 - **Grafana**: http://localhost:3001
 - **Prometheus**: http://localhost:9090
 - **Jaeger**: http://localhost:16686

@@ -27,8 +27,10 @@ This document outlines the complete architecture and implementation of a product
 
 ### CI/CD Pipeline
 
-- **GitHub Actions**: Continuous Integration (build, test, security scans)
+- **Argo Workflows**: Kubernetes-native CI for container builds (NEW!)
 - **ArgoCD**: GitOps-based Continuous Deployment
+- **Self-Service Builds**: Engineers trigger builds through Backstage
+- **Internal CI/CD**: No external CI dependencies required
 - **Container Build**: Multi-stage Docker builds pushed to ECR
 
 ### Secrets Management
@@ -83,8 +85,11 @@ High-level abstraction that generates:
 - ✅ cert-manager for automatic certificate management
 - ✅ Network policies and security configurations
 
-### ✅ Phase 3: CI/CD Pipeline (COMPLETED)
+### ✅ Phase 3: CI/CD Pipeline (COMPLETED & ENHANCED)
 - ✅ ArgoCD deployed as central GitOps engine
+- ✅ **Argo Workflows deployed for internal CI/CD (NEW!)**
+- ✅ **Self-service container builds via Backstage (NEW!)**
+- ✅ **Kubernetes-native build pipelines (NEW!)**
 - ✅ GitHub Actions workflows for CI/CD
 - ✅ Multi-environment promotion pipelines
 - ✅ Container registry integration
@@ -141,6 +146,7 @@ The platform now includes comprehensive automation scripts for one-command setup
 All platform services are automatically port-forwarded:
 - ArgoCD: http://localhost:8080
 - Backstage: http://localhost:3000
+- **Argo Workflows: http://localhost:4000** (NEW!)
 - Grafana: http://localhost:3001
 - Prometheus: http://localhost:9090
 - Jaeger: http://localhost:16686
@@ -158,6 +164,7 @@ idp-status         # Check status
 idp-health         # Health check
 idp-argocd         # Open ArgoCD
 idp-backstage      # Open Backstage
+idp-workflows      # Open Argo Workflows (NEW!)
 idp-grafana        # Open Grafana
 ```
 
@@ -342,7 +349,9 @@ All services are automatically accessible:
 ### 🎯 Current Capabilities
 
 ✅ **Full GitOps Workflow**: All deployments via ArgoCD
-✅ **Self-Service Portal**: Backstage with templates
+✅ **Internal CI/CD**: Argo Workflows for container builds (NEW!)
+✅ **Self-Service Portal**: Backstage with build templates (ENHANCED!)
+✅ **Zero External Dependencies**: Complete CI/CD within cluster (NEW!)
 ✅ **Complete Observability**: Metrics, logs, traces, alerts
 ✅ **Local Development**: LocalStack AWS emulation
 ✅ **Service Mesh**: Istio with mTLS security

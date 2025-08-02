@@ -129,6 +129,7 @@ alias idp-restart='./scripts/start-platform.sh restart'
 # Service access shortcuts
 alias idp-argocd='open http://localhost:8080'
 alias idp-backstage='open http://localhost:3000'
+alias idp-workflows='open http://localhost:4000'
 alias idp-grafana='open http://localhost:3001'
 alias idp-prometheus='open http://localhost:9090'
 alias idp-jaeger='open http://localhost:16686'
@@ -149,10 +150,11 @@ alias argocd-apps='argocd app list'
 alias argocd-sync='argocd app sync'
 
 # Platform specific shortcuts
-alias idp-pods='kubectl get pods --all-namespaces | grep -E "(argocd|backstage|istio|grafana|prometheus)"'
+alias idp-pods='kubectl get pods --all-namespaces | grep -E "(argocd|backstage|argo-workflows|istio|grafana|prometheus)"'
 alias idp-apps='kubectl get applications -n argocd'
 alias idp-logs-argocd='kubectl logs -n argocd deployment/argocd-server -f'
 alias idp-logs-backstage='kubectl logs -n backstage deployment/backstage -f'
+alias idp-logs-workflows='kubectl logs -n argo-workflows deployment/argo-server -f'
 
 # Development helpers
 alias idp-port-forward='./scripts/start-platform.sh start'

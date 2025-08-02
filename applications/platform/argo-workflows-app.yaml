@@ -1,0 +1,94 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-workflows
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-workflows
+    targetRevision: 0.41.0
+    helm:
+      values: |
+        images:
+          tag: "v3.5.5"
+        
+        controller:
+          metricsConfig:
+            enabled: true
+          telemetryConfig:
+            enabled: true
+          persistence:
+            connectionPool:
+              maxIdleConns: 100
+              maxOpenConns: 0
+          workflowNamespaces:
+            - argo-workflows
+            - default
+            - backstage
+        
+        server:
+          enabled: true
+          baseHref: /
+          secure: false
+          authModes:
+            - server
+          extraArgs:
+            - --auth-mode=server
+            - --access-control-allow-origin=*
+          ingress:
+            enabled: false
+          serviceType: ClusterIP
+          servicePort: 2746
+        
+        executor:
+          image:
+            tag: "v3.5.5"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+        
+        workflow:
+          serviceAccount:
+            create: true
+            name: "argo-workflow"
+          rbac:
+            create: true
+        
+        useDefaultArtifactRepo: false
+        useStaticCredentials: true
+        
+        artifactRepository:
+          s3:
+            bucket: argo-artifacts
+            endpoint: localstack:4566
+            insecure: true
+            accessKeySecret:
+              name: argo-workflows-s3
+              key: accesskey
+            secretKeySecret:
+              name: argo-workflows-s3
+              key: secretkey
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-workflows
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

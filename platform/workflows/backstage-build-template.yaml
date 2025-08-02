@@ -1,0 +1,231 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: backstage-app-build
+  namespace: argo-workflows
+  labels:
+    app: argo-workflows
+    template-type: backstage-build
+spec:
+  entrypoint: build-backstage-app
+  arguments:
+    parameters:
+    - name: repo-url
+      value: ""
+    - name: revision
+      value: "main"
+    - name: app-name
+      value: "backstage-app"
+    - name: image-tag
+      value: "latest"
+    - name: dockerfile
+      value: "Dockerfile.prebuilt"
+    - name: ecr-registry
+      value: "000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566"
+  templates:
+  - name: build-backstage-app
+    steps:
+    - - name: checkout-source
+        template: git-checkout
+        arguments:
+          parameters:
+          - name: repo-url
+            value: "{{workflow.parameters.repo-url}}"
+          - name: revision
+            value: "{{workflow.parameters.revision}}"
+    - - name: build-frontend
+        template: build-frontend-step
+        arguments:
+          artifacts:
+          - name: source-code
+            from: "{{steps.checkout-source.outputs.artifacts.source-code}}"
+    - - name: build-backend
+        template: build-backend-step
+        arguments:
+          artifacts:
+          - name: source-code
+            from: "{{steps.build-frontend.outputs.artifacts.built-source}}"
+    - - name: docker-build-push
+        template: docker-build-step
+        arguments:
+          parameters:
+          - name: app-name
+            value: "{{workflow.parameters.app-name}}"
+          - name: image-tag
+            value: "{{workflow.parameters.image-tag}}"
+          - name: dockerfile
+            value: "{{workflow.parameters.dockerfile}}"
+          - name: ecr-registry
+            value: "{{workflow.parameters.ecr-registry}}"
+          artifacts:
+          - name: built-source
+            from: "{{steps.build-backend.outputs.artifacts.built-source}}"
+
+  - name: git-checkout
+    inputs:
+      parameters:
+      - name: repo-url
+      - name: revision
+    outputs:
+      artifacts:
+      - name: source-code
+        path: /workspace
+    container:
+      image: alpine/git:latest
+      command: [sh, -c]
+      args:
+        - |
+          set -e
+          echo "Cloning repository {{inputs.parameters.repo-url}}"
+          git clone {{inputs.parameters.repo-url}} /workspace
+          cd /workspace
+          git checkout {{inputs.parameters.revision}}
+          echo "Repository cloned successfully"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+
+  - name: build-frontend-step
+    inputs:
+      artifacts:
+      - name: source-code
+        path: /workspace
+    outputs:
+      artifacts:
+      - name: built-source
+        path: /workspace
+    container:
+      image: node:20-bookworm-slim
+      command: [sh, -c]
+      args:
+        - |
+          set -e
+          cd /workspace
+          
+          # Install dependencies
+          echo "Installing dependencies..."
+          yarn install --frozen-lockfile
+          
+          # Build frontend
+          echo "Building frontend..."
+          yarn build:frontend --config ../../app-config.idp.yaml
+          
+          echo "Frontend build completed"
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "1"
+        limits:
+          memory: "4Gi"
+          cpu: "2"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+
+  - name: build-backend-step
+    inputs:
+      artifacts:
+      - name: source-code
+        path: /workspace
+    outputs:
+      artifacts:
+      - name: built-source
+        path: /workspace
+    container:
+      image: node:20-bookworm-slim
+      command: [sh, -c]
+      args:
+        - |
+          set -e
+          cd /workspace
+          
+          # Build backend
+          echo "Building backend..."
+          yarn build:backend --config ../../app-config.idp.yaml
+          
+          # Create distribution packages
+          echo "Creating distribution packages..."
+          yarn build-image --tag temp-build
+          
+          echo "Backend build completed"
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "1"
+        limits:
+          memory: "4Gi"
+          cpu: "2"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+
+  - name: docker-build-step
+    inputs:
+      parameters:
+      - name: app-name
+      - name: image-tag
+      - name: dockerfile
+      - name: ecr-registry
+      artifacts:
+      - name: built-source
+        path: /workspace
+    container:
+      image: docker:24-dind
+      command: [sh, -c]
+      args:
+        - |
+          set -e
+          
+          # Start Docker daemon
+          dockerd &
+          sleep 15
+          
+          # Install AWS CLI
+          apk add --no-cache aws-cli
+          
+          # Configure AWS for LocalStack
+          export AWS_ACCESS_KEY_ID=test
+          export AWS_SECRET_ACCESS_KEY=test
+          export AWS_DEFAULT_REGION=us-east-1
+          
+          # Login to ECR
+          echo "Logging into ECR..."
+          aws --endpoint-url=http://localstack:4566 ecr get-login-password | docker login --username AWS --password-stdin {{inputs.parameters.ecr-registry}}
+          
+          # Build Docker image
+          cd /workspace
+          echo "Building Docker image with {{inputs.parameters.dockerfile}}..."
+          docker build -f {{inputs.parameters.dockerfile}} -t {{inputs.parameters.app-name}}:{{inputs.parameters.image-tag}} .
+          
+          # Tag for ECR
+          docker tag {{inputs.parameters.app-name}}:{{inputs.parameters.image-tag}} {{inputs.parameters.ecr-registry}}/idp/{{inputs.parameters.app-name}}:{{inputs.parameters.image-tag}}
+          
+          # Push to ECR
+          echo "Pushing image to ECR..."
+          docker push {{inputs.parameters.ecr-registry}}/idp/{{inputs.parameters.app-name}}:{{inputs.parameters.image-tag}}
+          
+          echo "✅ Image pushed successfully: {{inputs.parameters.ecr-registry}}/idp/{{inputs.parameters.app-name}}:{{inputs.parameters.image-tag}}"
+      privileged: true
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+      - name: docker-sock
+        mountPath: /var/run/docker.sock
+      resources:
+        requests:
+          memory: "1Gi"
+          cpu: "500m"
+        limits:
+          memory: "4Gi"
+          cpu: "2"
+
+  volumes:
+  - name: workspace
+    emptyDir: 
+      sizeLimit: "10Gi"
+  - name: docker-sock
+    hostPath:
+      path: /var/run/docker.sock
+      type: Socket
+
+  serviceAccountName: docker-builder

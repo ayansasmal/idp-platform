@@ -21,6 +21,7 @@ get_service_config() {
     case "$1" in
         "argocd") echo "argocd:argocd-server:8080:80" ;;
         "backstage") echo "backstage:backstage:3000:80" ;;
+        "workflows") echo "argo-workflows:argo-server:4000:2746" ;;
         "grafana") echo "istio-system:grafana:3001:3000" ;;
         "prometheus") echo "istio-system:prometheus:9090:9090" ;;
         "jaeger") echo "istio-system:tracing:16686:80" ;;
@@ -33,7 +34,47 @@ get_service_config() {
 
 # Get all service names
 get_all_services() {
-    echo "argocd backstage grafana prometheus jaeger kiali monitoring alertmanager"
+    echo "argocd backstage workflows grafana prometheus jaeger kiali monitoring alertmanager"
+}
+
+# Discover which services are actually available
+discover_available_services() {
+    local available_services=()
+    
+    for service_name in $(get_all_services); do
+        local config=$(get_service_config "$service_name")
+        if [[ -n "$config" ]]; then
+            IFS=':' read -r namespace svc local_port remote_port <<< "$config"
+            
+            # Check if namespace and service exist
+            if kubectl get namespace "$namespace" &> /dev/null && \
+               kubectl get svc -n "$namespace" "$svc" &> /dev/null; then
+                available_services+=("$service_name")
+            fi
+        fi
+    done
+    
+    printf '%s\n' "${available_services[@]}"
+}
+
+# Get pending services (defined but not yet deployed)
+get_pending_services() {
+    local pending_services=()
+    
+    for service_name in $(get_all_services); do
+        local config=$(get_service_config "$service_name")
+        if [[ -n "$config" ]]; then
+            IFS=':' read -r namespace svc local_port remote_port <<< "$config"
+            
+            # Check if service is not available
+            if ! kubectl get namespace "$namespace" &> /dev/null || \
+               ! kubectl get svc -n "$namespace" "$svc" &> /dev/null; then
+                pending_services+=("$service_name")
+            fi
+        fi
+    done
+    
+    printf '%s\n' "${pending_services[@]}"
 }
 
 # Help function
@@ -44,6 +85,8 @@ show_help() {
     echo ""
     echo "Commands:"
     echo "  start [services]    Start port forwarding for specified services (or all)"
+    echo "  smart              Start only available services (skip pending deployments)"
+    echo "  discover           Show available and pending services"
     echo "  stop               Stop all port forwarding"
     echo "  status             Show status of port forwards"
     echo "  restart            Restart all port forwards"
@@ -87,6 +130,13 @@ wait_for_service() {
     local service=$2
     local timeout=60
     local count=0
+    
+    # First check if namespace exists
+    if ! kubectl get namespace "$namespace" &> /dev/null; then
+        echo -e " ${YELLOW}⏳${NC}"
+        echo -e "${YELLOW}Namespace '$namespace' not found - may be deployed later by ArgoCD${NC}"
+        return 1
+    fi
     
     echo -n "Waiting for ${namespace}/${service} to be ready..."
     
@@ -218,7 +268,7 @@ check_health() {
     fi
     
     # Check critical namespaces
-    local namespaces=("argocd" "backstage" "istio-system")
+    local namespaces=("argocd" "backstage" "argo-workflows" "istio-system")
     for ns in "${namespaces[@]}"; do
         if kubectl get namespace "$ns" &> /dev/null; then
             echo -e "${GREEN}✓${NC} Namespace $ns - Exists"
@@ -342,6 +392,92 @@ main() {
             ;;
         "health")
             check_health
+            ;;
+        "smart")
+            # Start only available services
+            echo -e "${BLUE}Starting available IDP platform services (smart mode)...${NC}"
+            echo ""
+            
+            # Stop any existing port forwards first
+            stop_port_forwards
+            
+            # Get available services
+            local available_services=($(discover_available_services))
+            local pending_services=($(get_pending_services))
+            
+            if [[ ${#available_services[@]} -eq 0 ]]; then
+                echo -e "${YELLOW}No services are currently available.${NC}"
+                echo -e "${BLUE}This might be because ArgoCD is still deploying the platform.${NC}"
+                exit 0
+            fi
+            
+            echo -e "${GREEN}Available services (${#available_services[@]}):${NC} ${available_services[*]}"
+            if [[ ${#pending_services[@]} -gt 0 ]]; then
+                echo -e "${YELLOW}Pending services (${#pending_services[@]}):${NC} ${pending_services[*]}"
+                echo -e "${BLUE}Pending services will be available after ArgoCD deployment${NC}"
+            fi
+            echo ""
+            
+            local started_count=0
+            for service_name in "${available_services[@]}"; do
+                if start_port_forward "$service_name"; then
+                    ((started_count++))
+                fi
+            done
+            
+            echo ""
+            echo -e "${GREEN}Started $started_count services${NC}"
+            
+            if [[ $started_count -gt 0 ]]; then
+                echo ""
+                echo -e "${BLUE}Access your services:${NC}"
+                for service_name in "${available_services[@]}"; do
+                    local config=$(get_service_config "$service_name")
+                    IFS=':' read -r namespace svc local_port remote_port <<< "$config"
+                    echo -e "  ${service_name}: ${GREEN}http://localhost:${local_port}${NC}"
+                done
+                echo ""
+                echo -e "${YELLOW}Note: Keep this terminal open to maintain port forwards${NC}"
+                echo -e "${YELLOW}Press Ctrl+C to stop all services${NC}"
+                
+                # Wait for interrupt
+                trap 'echo -e "\n${BLUE}Shutting down...${NC}"; stop_port_forwards; exit 0' INT
+                while true; do
+                    sleep 1
+                done
+            fi
+            ;;
+        "discover")
+            # Show available and pending services
+            echo -e "${BLUE}IDP Platform Service Discovery${NC}"
+            echo "============================================"
+            
+            local available_services=($(discover_available_services))
+            local pending_services=($(get_pending_services))
+            
+            echo -e "\n${GREEN}✓ Available Services (${#available_services[@]}):${NC}"
+            if [[ ${#available_services[@]} -eq 0 ]]; then
+                echo -e "  ${YELLOW}None - ArgoCD may still be deploying${NC}"
+            else
+                for service_name in "${available_services[@]}"; do
+                    local config=$(get_service_config "$service_name")
+                    IFS=':' read -r namespace svc local_port remote_port <<< "$config"
+                    echo -e "  ${GREEN}•${NC} ${service_name} (${namespace}/${svc}) → http://localhost:${local_port}"
+                done
+            fi
+            
+            echo -e "\n${YELLOW}⏳ Pending Services (${#pending_services[@]}):${NC}"
+            if [[ ${#pending_services[@]} -eq 0 ]]; then
+                echo -e "  ${GREEN}None - All services are deployed!${NC}"
+            else
+                for service_name in "${pending_services[@]}"; do
+                    local config=$(get_service_config "$service_name")
+                    IFS=':' read -r namespace svc local_port remote_port <<< "$config"
+                    echo -e "  ${YELLOW}•${NC} ${service_name} (${namespace}/${svc}) → will be http://localhost:${local_port}"
+                done
+                echo -e "\n${BLUE}💡 Use '${0} smart' to start only available services${NC}"
+            fi
+            echo ""
             ;;
         "logs")
             show_logs "$2"
