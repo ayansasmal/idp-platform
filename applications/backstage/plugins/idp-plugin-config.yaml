@@ -1,0 +1,398 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-idp-plugins
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: backstage-plugins
+data:
+  idp-dashboard.tsx: |
+    import React from 'react';
+    import { Grid, Card, CardContent, Typography, Chip } from '@material-ui/core';
+    import {
+      Page,
+      Header,
+      Content,
+      ContentHeader,
+      SupportButton,
+    } from '@backstage/core-components';
+    import { useApi, configApiRef } from '@backstage/core-plugin-api';
+
+    export const IDPDashboard = () => {
+      return (
+        <Page themeId="tool">
+          <Header title="IDP Platform Dashboard" subtitle="Platform Overview">
+            <SupportButton>Platform operations and monitoring</SupportButton>
+          </Header>
+          <Content>
+            <ContentHeader title="Platform Status">
+              <SupportButton>Monitor platform health and status</SupportButton>
+            </ContentHeader>
+            <Grid container spacing={3} alignItems="stretch">
+              <Grid item lg={4} md={6} xs={12}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      WebApplications
+                    </Typography>
+                    <Typography variant="h3" color="primary">
+                      5
+                    </Typography>
+                    <Typography color="textSecondary">
+                      Active applications
+                    </Typography>
+                    <Chip label="Healthy" color="primary" size="small" />
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item lg={4} md={6} xs={12}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      ArgoCD Apps
+                    </Typography>
+                    <Typography variant="h3" color="primary">
+                      12
+                    </Typography>
+                    <Typography color="textSecondary">
+                      Managed deployments
+                    </Typography>
+                    <Chip label="Synced" color="primary" size="small" />
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item lg={4} md={6} xs={12}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Namespaces
+                    </Typography>
+                    <Typography variant="h3" color="primary">
+                      8
+                    </Typography>
+                    <Typography color="textSecondary">
+                      Active environments
+                    </Typography>
+                    <Chip label="Ready" color="primary" size="small" />
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          </Content>
+        </Page>
+      );
+    };
+
+  webapp-manager.tsx: |
+    import React, { useState, useEffect } from 'react';
+    import {
+      Table,
+      TableBody,
+      TableCell,
+      TableContainer,
+      TableHead,
+      TableRow,
+      Paper,
+      Chip,
+      Button,
+      Dialog,
+      DialogTitle,
+      DialogContent,
+      DialogActions,
+      TextField,
+      FormControl,
+      InputLabel,
+      Select,
+      MenuItem,
+    } from '@material-ui/core';
+    import {
+      Page,
+      Header,
+      Content,
+      ContentHeader,
+    } from '@backstage/core-components';
+
+    interface WebApplication {
+      name: string;
+      namespace: string;
+      phase: string;
+      replicas: number;
+      environment: string;
+      url: string;
+    }
+
+    export const WebAppManager = () => {
+      const [webApps, setWebApps] = useState<WebApplication[]>([]);
+      const [createDialogOpen, setCreateDialogOpen] = useState(false);
+      const [newApp, setNewApp] = useState({
+        name: '',
+        image: 'nginx:latest',
+        namespace: 'development',
+        environment: 'development',
+        replicas: 2,
+      });
+
+      const fetchWebApps = async () => {
+        // Mock data - in real implementation, fetch from Kubernetes API
+        setWebApps([
+          {
+            name: 'sample-web-app',
+            namespace: 'development',
+            phase: 'Ready',
+            replicas: 2,
+            environment: 'development',
+            url: 'https://sample-app.idp.local',
+          },
+        ]);
+      };
+
+      useEffect(() => {
+        fetchWebApps();
+      }, []);
+
+      const handleCreateApp = async () => {
+        // In real implementation, create WebApplication via API
+        console.log('Creating WebApplication:', newApp);
+        setCreateDialogOpen(false);
+        fetchWebApps();
+      };
+
+      return (
+        <Page themeId="tool">
+          <Header title="WebApplication Manager" subtitle="Manage web applications">
+          </Header>
+          <Content>
+            <ContentHeader title="Applications">
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={() => setCreateDialogOpen(true)}
+              >
+                Create Application
+              </Button>
+            </ContentHeader>
+            <TableContainer component={Paper}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Name</TableCell>
+                    <TableCell>Namespace</TableCell>
+                    <TableCell>Phase</TableCell>
+                    <TableCell>Replicas</TableCell>
+                    <TableCell>Environment</TableCell>
+                    <TableCell>URL</TableCell>
+                    <TableCell>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {webApps.map((app) => (
+                    <TableRow key={`${app.namespace}/${app.name}`}>
+                      <TableCell>{app.name}</TableCell>
+                      <TableCell>{app.namespace}</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={app.phase}
+                          color={app.phase === 'Ready' ? 'primary' : 'default'}
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell>{app.replicas}</TableCell>
+                      <TableCell>{app.environment}</TableCell>
+                      <TableCell>
+                        <a href={app.url} target="_blank" rel="noopener noreferrer">
+                          {app.url}
+                        </a>
+                      </TableCell>
+                      <TableCell>
+                        <Button size="small">Edit</Button>
+                        <Button size="small" color="secondary">Delete</Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+
+            <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)}>
+              <DialogTitle>Create WebApplication</DialogTitle>
+              <DialogContent>
+                <TextField
+                  autoFocus
+                  margin="dense"
+                  label="Application Name"
+                  fullWidth
+                  value={newApp.name}
+                  onChange={(e) => setNewApp({...newApp, name: e.target.value})}
+                />
+                <TextField
+                  margin="dense"
+                  label="Container Image"
+                  fullWidth
+                  value={newApp.image}
+                  onChange={(e) => setNewApp({...newApp, image: e.target.value})}
+                />
+                <FormControl fullWidth margin="dense">
+                  <InputLabel>Environment</InputLabel>
+                  <Select
+                    value={newApp.environment}
+                    onChange={(e) => setNewApp({...newApp, environment: e.target.value as string})}
+                  >
+                    <MenuItem value="development">Development</MenuItem>
+                    <MenuItem value="staging">Staging</MenuItem>
+                    <MenuItem value="production">Production</MenuItem>
+                  </Select>
+                </FormControl>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleCreateApp} color="primary">Create</Button>
+              </DialogActions>
+            </Dialog>
+          </Content>
+        </Page>
+      );
+    };
+
+  platform-health.tsx: |
+    import React, { useState, useEffect } from 'react';
+    import {
+      Grid,
+      Card,
+      CardContent,
+      Typography,
+      LinearProgress,
+      List,
+      ListItem,
+      ListItemIcon,
+      ListItemText,
+    } from '@material-ui/core';
+    import {
+      CheckCircle as CheckIcon,
+      Error as ErrorIcon,
+      Warning as WarningIcon,
+    } from '@material-ui/icons';
+    import {
+      Page,
+      Header,
+      Content,
+      ContentHeader,
+    } from '@backstage/core-components';
+
+    interface HealthStatus {
+      component: string;
+      status: 'healthy' | 'warning' | 'error';
+      message: string;
+      uptime?: string;
+    }
+
+    export const PlatformHealth = () => {
+      const [healthData, setHealthData] = useState<HealthStatus[]>([]);
+
+      useEffect(() => {
+        // Mock health data - in real implementation, fetch from monitoring APIs
+        setHealthData([
+          {
+            component: 'Kubernetes API',
+            status: 'healthy',
+            message: 'All systems operational',
+            uptime: '99.9%',
+          },
+          {
+            component: 'ArgoCD',
+            status: 'healthy',
+            message: 'All applications synced',
+            uptime: '99.8%',
+          },
+          {
+            component: 'Istio Service Mesh',
+            status: 'healthy',
+            message: 'Traffic routing normal',
+            uptime: '99.9%',
+          },
+          {
+            component: 'Crossplane',
+            status: 'warning',
+            message: '2 resources pending',
+            uptime: '99.5%',
+          },
+          {
+            component: 'External Secrets Operator',
+            status: 'healthy',
+            message: 'Secrets synchronized',
+            uptime: '99.7%',
+          },
+        ]);
+      }, []);
+
+      const getStatusIcon = (status: string) => {
+        switch (status) {
+          case 'healthy':
+            return <CheckIcon style={{ color: 'green' }} />;
+          case 'warning':
+            return <WarningIcon style={{ color: 'orange' }} />;
+          case 'error':
+            return <ErrorIcon style={{ color: 'red' }} />;
+          default:
+            return <CheckIcon />;
+        }
+      };
+
+      const healthyCount = healthData.filter(item => item.status === 'healthy').length;
+      const totalCount = healthData.length;
+      const healthPercentage = (healthyCount / totalCount) * 100;
+
+      return (
+        <Page themeId="tool">
+          <Header title="Platform Health" subtitle="Monitor platform components">
+          </Header>
+          <Content>
+            <ContentHeader title="System Status">
+            </ContentHeader>
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={4}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Overall Health
+                    </Typography>
+                    <Typography variant="h3" color="primary">
+                      {healthPercentage.toFixed(1)}%
+                    </Typography>
+                    <LinearProgress 
+                      variant="determinate" 
+                      value={healthPercentage} 
+                      style={{ marginTop: 8 }}
+                    />
+                    <Typography variant="body2" color="textSecondary" style={{ marginTop: 8 }}>
+                      {healthyCount} of {totalCount} components healthy
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} md={8}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Component Status
+                    </Typography>
+                    <List>
+                      {healthData.map((item, index) => (
+                        <ListItem key={index}>
+                          <ListItemIcon>
+                            {getStatusIcon(item.status)}
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={item.component}
+                            secondary={`${item.message} • Uptime: ${item.uptime}`}
+                          />
+                        </ListItem>
+                      ))}
+                    </List>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          </Content>
+        </Page>
+      );
+    };

@@ -1,0 +1,61 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: s3-bucket-localstack
+  labels:
+    provider: aws
+    service: s3
+    environment: local
+spec:
+  writeConnectionSecretsToNamespace: crossplane-system
+  compositeTypeRef:
+    apiVersion: platform.idp/v1alpha1
+    kind: XS3Bucket
+  resources:
+  - name: s3-bucket
+    base:
+      apiVersion: s3.aws.upbound.io/v1beta1
+      kind: Bucket
+      spec:
+        providerConfigRef:
+          name: localstack-config
+        forProvider:
+          region: us-east-1
+    patches:
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.bucketName
+      toFieldPath: metadata.name
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.bucketName
+      toFieldPath: spec.forProvider.bucket
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xs3buckets.platform.idp
+spec:
+  group: platform.idp
+  names:
+    kind: XS3Bucket
+    plural: xs3buckets
+  versions:
+  - name: v1alpha1
+    served: true
+    referenceable: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              bucketName:
+                type: string
+                description: Name of the S3 bucket
+            required:
+            - bucketName
+          status:
+            type: object
+            properties:
+              bucketName:
+                type: string

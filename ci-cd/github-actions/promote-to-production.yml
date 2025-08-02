@@ -1,0 +1,100 @@
+name: Promote to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Source environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+      image_tag:
+        description: 'Image tag to promote'
+        required: true
+        type: string
+      approval_required:
+        description: 'Require manual approval'
+        required: true
+        default: true
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  validate-promotion:
+    runs-on: ubuntu-latest
+    outputs:
+      can-promote: ${{ steps.validate.outputs.can-promote }}
+      
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Validate staging deployment
+      id: validate
+      run: |
+        # Add validation logic here (health checks, tests, etc.)
+        echo "can-promote=true" >> $GITHUB_OUTPUT
+
+  request-approval:
+    runs-on: ubuntu-latest
+    needs: validate-promotion
+    if: ${{ github.event.inputs.approval_required == 'true' && needs.validate-promotion.outputs.can-promote == 'true' }}
+    environment: 
+      name: production-approval
+      
+    steps:
+    - name: Request Production Deployment Approval
+      run: |
+        echo "Production deployment approval requested"
+        echo "Image tag: ${{ github.event.inputs.image_tag }}"
+
+  promote-to-production:
+    runs-on: ubuntu-latest
+    needs: [validate-promotion, request-approval]
+    if: always() && needs.validate-promotion.outputs.can-promote == 'true'
+    environment: production
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Update production image tag
+      run: |
+        NEW_TAG="${{ github.event.inputs.image_tag }}"
+        sed -i "s/tag: .*/tag: ${NEW_TAG}/" k8s/production/values.yaml
+        
+    - name: Create Pull Request for Production
+      uses: peter-evans/create-pull-request@v5
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        commit-message: "chore: promote ${{ github.event.inputs.image_tag }} to production"
+        title: "🚀 Promote to Production - ${{ github.event.inputs.image_tag }}"
+        body: |
+          **PRODUCTION DEPLOYMENT**
+          
+          Promoting validated image from ${{ github.event.inputs.environment }} to production
+          
+          **Changes:**
+          - Updated image tag to `${{ github.event.inputs.image_tag }}`
+          - Environment: production
+          - Source: ${{ github.event.inputs.environment }}
+          
+          **⚠️ This will deploy to production after merge**
+        branch: promote/production-${{ github.event.inputs.image_tag }}
+        base: main
+
+    - name: Notify on success
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        text: |
+          🎉 Production promotion successful!
+          Image: ${{ github.event.inputs.image_tag }}
+          PR created for final approval
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

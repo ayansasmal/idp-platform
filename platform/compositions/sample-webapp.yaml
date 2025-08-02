@@ -1,0 +1,49 @@
+apiVersion: platform.idp/v1alpha1
+kind: WebApplication
+metadata:
+  name: sample-web-app
+  namespace: development
+  labels:
+    app.kubernetes.io/name: sample-web-app
+    platform.idp/owner: development-team
+spec:
+  appName: sample-web-app
+  image:
+    repository: nginx
+    tag: "1.21"
+    pullPolicy: IfNotPresent
+  replicas: 2
+  port: 80
+  environment: development
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilization: 70
+  ingress:
+    enabled: true
+    hostname: sample-app.idp.local
+    tls: true
+  database:
+    enabled: false
+  monitoring:
+    enabled: true
+    metrics:
+      enabled: true
+      path: "/metrics"
+      port: 9090
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: development
+  labels:
+    istio-injection: enabled
+    platform.idp/environment: development

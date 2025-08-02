@@ -1,0 +1,32 @@
+# Development Environment
+development:
+  appName: "sample-web-app"
+  repoURL: "https://github.com/your-org/sample-web-app"
+  namespace: "development"
+  environment: "dev"
+  project: "idp-platform"
+  autoSync:
+    prune: true
+    selfHeal: true
+
+# Staging Environment  
+staging:
+  appName: "sample-web-app"
+  repoURL: "https://github.com/your-org/sample-web-app"
+  namespace: "staging"
+  environment: "staging"
+  project: "idp-platform"
+  autoSync:
+    prune: false
+    selfHeal: false
+
+# Production Environment
+production:
+  appName: "sample-web-app"
+  repoURL: "https://github.com/your-org/sample-web-app"
+  namespace: "production"
+  environment: "prod"
+  project: "idp-platform"
+  autoSync:
+    prune: false
+    selfHeal: false

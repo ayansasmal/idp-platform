@@ -1,0 +1,51 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: sample-web-app
+  namespace: development
+  labels:
+    app.kubernetes.io/name: sample-web-app
+    app.kubernetes.io/managed-by: idp-platform
+    platform.idp/environment: development
+spec:
+  hosts:
+  - sample-app.idp.local
+  gateways:
+  - istio-system/idp-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: sample-web-app
+        port:
+          number: 80
+    timeout: 30s
+    retries:
+      attempts: 3
+      perTryTimeout: 10s
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: sample-web-app
+  namespace: development
+  labels:
+    app.kubernetes.io/name: sample-web-app
+    app.kubernetes.io/managed-by: idp-platform
+    platform.idp/environment: development
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: sample-web-app
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70

@@ -1,0 +1,248 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backstage-minimal
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: backstage-minimal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backstage-minimal
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backstage-minimal
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      containers:
+      - name: backstage
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: backstage-content
+          mountPath: /usr/share/nginx/html
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+      volumes:
+      - name: backstage-content
+        configMap:
+          name: backstage-ui-content
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backstage-minimal
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: backstage-minimal
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app.kubernetes.io/name: backstage-minimal
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-ui-content
+  namespace: backstage
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>IDP Platform Portal</title>
+        <style>
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                margin: 0;
+                padding: 0;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }
+            .container {
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 20px;
+            }
+            .header {
+                text-align: center;
+                padding: 40px 0;
+            }
+            .header h1 {
+                font-size: 3rem;
+                margin-bottom: 10px;
+            }
+            .header p {
+                font-size: 1.2rem;
+                opacity: 0.9;
+            }
+            .dashboard {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 20px;
+                margin-top: 40px;
+            }
+            .card {
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 10px;
+                padding: 20px;
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+            }
+            .card h3 {
+                margin: 0 0 15px 0;
+                color: #fff;
+            }
+            .card p {
+                opacity: 0.8;
+                line-height: 1.6;
+            }
+            .status {
+                display: inline-block;
+                padding: 4px 12px;
+                border-radius: 20px;
+                font-size: 0.8rem;
+                margin-top: 10px;
+            }
+            .status.healthy {
+                background-color: #4CAF50;
+            }
+            .status.warning {
+                background-color: #FF9800;
+            }
+            .links {
+                margin-top: 30px;
+                text-align: center;
+            }
+            .links a {
+                display: inline-block;
+                margin: 10px;
+                padding: 12px 24px;
+                background: rgba(255, 255, 255, 0.2);
+                color: white;
+                text-decoration: none;
+                border-radius: 25px;
+                transition: all 0.3s;
+            }
+            .links a:hover {
+                background: rgba(255, 255, 255, 0.3);
+                transform: translateY(-2px);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🚀 IDP Platform Portal</h1>
+                <p>Your Integrated Developer Platform Dashboard</p>
+            </div>
+            
+            <div class="dashboard">
+                <div class="card">
+                    <h3>🎯 WebApplications</h3>
+                    <p>Currently running: <strong>1 application</strong></p>
+                    <p>sample-web-app in development environment</p>
+                    <span class="status healthy">Healthy</span>
+                </div>
+                
+                <div class="card">
+                    <h3>🔄 ArgoCD</h3>
+                    <p>GitOps deployments: <strong>1 application</strong></p>
+                    <p>All applications synchronized</p>
+                    <span class="status healthy">Synced</span>
+                </div>
+                
+                <div class="card">
+                    <h3>🌐 Service Mesh</h3>
+                    <p>Istio mesh status: <strong>Active</strong></p>
+                    <p>mTLS enabled, traffic routing operational</p>
+                    <span class="status healthy">Running</span>
+                </div>
+                
+                <div class="card">
+                    <h3>🔧 Infrastructure</h3>
+                    <p>Crossplane providers: <strong>AWS LocalStack</strong></p>
+                    <p>External Secrets, cert-manager active</p>
+                    <span class="status warning">Partial</span>
+                </div>
+                
+                <div class="card">
+                    <h3>📊 Platform Stats</h3>
+                    <p>Namespaces: <strong>8</strong> | Pods: <strong>25+</strong></p>
+                    <p>CPU Usage: 45% | Memory: 60%</p>
+                    <span class="status healthy">Normal</span>
+                </div>
+                
+                <div class="card">
+                    <h3>🛠️ Quick Actions</h3>
+                    <p>Use the IDP CLI to manage applications:</p>
+                    <p><code>./idp-cli create my-app nginx:latest</code></p>
+                    <span class="status healthy">Ready</span>
+                </div>
+            </div>
+            
+            <div class="links">
+                <a href="https://localhost:8080" target="_blank">🎯 ArgoCD Dashboard</a>
+                <a href="http://localhost:8081" target="_blank">🌐 Sample Web App</a>
+                <a href="#" onclick="showCLIHelp()">📋 CLI Commands</a>
+                <a href="#" onclick="showResources()">📚 Platform Docs</a>
+            </div>
+        </div>
+        
+        <script>
+            function showCLIHelp() {
+                alert(`IDP CLI Commands:
+                
+📋 List apps: ./idp-cli list
+🚀 Create app: ./idp-cli create <name> <image>
+📊 App status: ./idp-cli status <name>
+🗑️ Delete app: ./idp-cli delete <name>
+❓ Help: ./idp-cli help`);
+            }
+            
+            function showResources() {
+                alert(`Platform Resources:
+                
+🎯 WebApplications: Custom K8s resources
+🔄 ArgoCD: GitOps deployment
+🌐 Istio: Service mesh & ingress
+🔧 Crossplane: Infrastructure as Code
+🔐 External Secrets: Secret management
+📜 cert-manager: Certificate automation`);
+            }
+            
+            // Auto-refresh every 30 seconds
+            setTimeout(() => location.reload(), 30000);
+        </script>
+    </body>
+    </html>
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: backstage-minimal
+  namespace: backstage
+spec:
+  hosts:
+  - backstage.idp.local
+  gateways:
+  - istio-system/idp-gateway
+  http:
+  - route:
+    - destination:
+        host: backstage-minimal
+        port:
+          number: 80

@@ -1,0 +1,33 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: backstage
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: backstage
+spec:
+  hosts:
+  - backstage.idp.local
+  gateways:
+  - istio-system/idp-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: backstage
+        port:
+          number: 80
+    timeout: 60s
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: backstage
+  namespace: backstage
+spec:
+  host: backstage
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL

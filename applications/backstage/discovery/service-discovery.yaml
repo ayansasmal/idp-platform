@@ -1,0 +1,190 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-discovery-config
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: backstage-discovery
+data:
+  discovery-processor.ts: |
+    import { Config } from '@backstage/config';
+    import {
+      CatalogProcessor,
+      CatalogProcessorEmit,
+      processingResult,
+    } from '@backstage/plugin-catalog-backend';
+    import { LocationSpec } from '@backstage/plugin-catalog-common';
+    import { Entity } from '@backstage/catalog-model';
+
+    export class IDPDiscoveryProcessor implements CatalogProcessor {
+      constructor(private readonly config: Config) {}
+
+      getProcessorName(): string {
+        return 'IDPDiscoveryProcessor';
+      }
+
+      async readLocation(
+        location: LocationSpec,
+        _optional: boolean,
+        emit: CatalogProcessorEmit,
+      ): Promise<boolean> {
+        if (location.type !== 'idp-discovery') {
+          return false;
+        }
+
+        try {
+          // Discover WebApplications from Kubernetes
+          const webApps = await this.discoverWebApplications();
+          
+          for (const app of webApps) {
+            const entity: Entity = {
+              apiVersion: 'backstage.io/v1alpha1',
+              kind: 'Component',
+              metadata: {
+                name: app.name,
+                namespace: app.namespace,
+                title: app.name,
+                description: `WebApplication in ${app.environment}`,
+                labels: {
+                  'app.kubernetes.io/name': app.name,
+                  'platform.idp/environment': app.environment,
+                  'platform.idp/type': 'web-application',
+                },
+                annotations: {
+                  'backstage.io/kubernetes-id': app.name,
+                  'backstage.io/kubernetes-namespace': app.namespace,
+                  'platform.idp/webapp-url': app.url || '',
+                },
+              },
+              spec: {
+                type: 'website',
+                lifecycle: app.environment === 'production' ? 'production' : 'experimental',
+                owner: 'unknown',
+                system: 'idp-platform',
+              },
+            };
+
+            emit(processingResult.entity(location, entity));
+          }
+
+          return true;
+        } catch (error) {
+          emit(processingResult.generalError(location, `Failed to discover: ${error}`));
+          return false;
+        }
+      }
+
+      private async discoverWebApplications(): Promise<any[]> {
+        // Mock implementation - in real setup, use Kubernetes client
+        return [
+          {
+            name: 'sample-web-app',
+            namespace: 'development',
+            environment: 'development',
+            url: 'https://sample-app.development.idp.local',
+          },
+        ];
+      }
+    }
+
+  auto-discovery.yaml: |
+    # Auto-discovery configuration for IDP components
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: auto-discovery-rules
+      namespace: backstage
+    data:
+      rules.yaml: |
+        discovery:
+          rules:
+            - name: webapp-discovery
+              type: kubernetes
+              selector:
+                apiVersion: platform.idp/v1alpha1
+                kind: WebApplication
+              mapping:
+                kind: Component
+                spec:
+                  type: website
+                  lifecycle: "{{ .spec.environment === 'production' ? 'production' : 'experimental' }}"
+                  owner: "{{ .metadata.labels['platform.idp/owner'] || 'unknown' }}"
+                metadata:
+                  name: "{{ .metadata.name }}"
+                  namespace: "{{ .metadata.namespace }}"
+                  title: "{{ .spec.appName }}"
+                  description: "WebApplication running {{ .spec.image.repository }}:{{ .spec.image.tag }}"
+                  labels:
+                    app.kubernetes.io/name: "{{ .metadata.name }}"
+                    platform.idp/environment: "{{ .spec.environment }}"
+                  annotations:
+                    backstage.io/kubernetes-id: "{{ .metadata.name }}"
+                    backstage.io/kubernetes-namespace: "{{ .metadata.namespace }}"
+                    platform.idp/replicas: "{{ .spec.replicas }}"
+                    platform.idp/image: "{{ .spec.image.repository }}:{{ .spec.image.tag }}"
+
+            - name: argocd-app-discovery
+              type: kubernetes
+              selector:
+                apiVersion: argoproj.io/v1alpha1
+                kind: Application
+                namespace: argocd
+              mapping:
+                kind: Component
+                spec:
+                  type: service
+                  lifecycle: production
+                  owner: platform-team
+                metadata:
+                  name: "{{ .metadata.name }}-argocd"
+                  title: "{{ .metadata.name }} (ArgoCD)"
+                  description: "ArgoCD application for {{ .metadata.name }}"
+                  annotations:
+                    argocd/app-name: "{{ .metadata.name }}"
+                    argocd/app-namespace: "{{ .metadata.namespace }}"
+
+            - name: crossplane-resource-discovery
+              type: kubernetes
+              selector:
+                apiVersion: apiextensions.crossplane.io/v1
+                kind: CompositeResourceDefinition
+              mapping:
+                kind: API
+                spec:
+                  type: openapi
+                  lifecycle: production
+                  owner: platform-team
+                metadata:
+                  name: "{{ .metadata.name }}-api"
+                  title: "{{ .spec.names.kind }} API"
+                  description: "Crossplane API for {{ .spec.names.kind }}"
+
+  catalog-sync.yaml: |
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: backstage-catalog-sync
+      namespace: backstage
+      labels:
+        app.kubernetes.io/name: catalog-sync
+        app.kubernetes.io/part-of: backstage
+    spec:
+      schedule: "*/5 * * * *"  # Every 5 minutes
+      jobTemplate:
+        spec:
+          template:
+            spec:
+              serviceAccountName: backstage
+              containers:
+              - name: catalog-sync
+                image: curlimages/curl:latest
+                command:
+                - /bin/sh
+                - -c
+                - |
+                  # Trigger catalog refresh via Backstage API
+                  curl -X POST \
+                    -H "Content-Type: application/json" \
+                    -d '{"type": "idp-discovery", "target": "kubernetes://default"}' \
+                    http://backstage.backstage.svc.cluster.local/api/catalog/locations
+              restartPolicy: OnFailure

@@ -1,0 +1,323 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-templates-config
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: backstage
+data:
+  web-application-template.yaml: |
+    apiVersion: scaffolder.backstage.io/v1beta3
+    kind: Template
+    metadata:
+      name: web-application-template
+      title: Web Application
+      description: Create a new web application on the IDP platform
+      tags:
+        - recommended
+        - web
+        - kubernetes
+        - idp
+    spec:
+      owner: platform-team
+      type: service
+      parameters:
+        - title: Application Details
+          required:
+            - name
+            - description
+          properties:
+            name:
+              title: Name
+              type: string
+              description: Unique name of the application
+              pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+              ui:autofocus: true
+              ui:help: 'Must be lowercase with hyphens'
+            description:
+              title: Description
+              type: string
+              description: Help others understand what this application does
+            owner:
+              title: Owner
+              type: string
+              description: Owner of the application
+              ui:field: OwnerPicker
+              ui:options:
+                catalogFilter:
+                  kind: Group
+        - title: Application Configuration
+          properties:
+            environment:
+              title: Environment
+              type: string
+              description: Target deployment environment
+              default: development
+              enum:
+                - development
+                - staging
+                - production
+              enumNames:
+                - Development
+                - Staging
+                - Production
+            replicas:
+              title: Initial Replicas
+              type: integer
+              description: Number of application instances
+              default: 2
+              minimum: 1
+              maximum: 10
+            image:
+              title: Container Image
+              type: string
+              description: Docker image for the application
+              default: nginx:latest
+            port:
+              title: Application Port
+              type: integer
+              description: Port the application listens on
+              default: 3000
+              minimum: 1
+              maximum: 65535
+        - title: Optional Features
+          properties:
+            enableDatabase:
+              title: Enable Database
+              type: boolean
+              description: Provision a PostgreSQL database
+              default: false
+            databaseSize:
+              title: Database Size
+              type: string
+              description: Size of the database instance
+              default: small
+              enum:
+                - small
+                - medium
+                - large
+              enumNames:
+                - Small (20GB)
+                - Medium (100GB)
+                - Large (500GB)
+              ui:widget: radio
+              ui:options:
+                disabled: false
+              if:
+                properties:
+                  enableDatabase:
+                    const: true
+            enableIngress:
+              title: Enable Ingress
+              type: boolean
+              description: Create external endpoint for the application
+              default: true
+            hostname:
+              title: Hostname
+              type: string
+              description: Custom hostname (optional)
+              ui:help: 'Leave empty for auto-generated hostname'
+        - title: Repository Information
+          required:
+            - repoUrl
+          properties:
+            repoUrl:
+              title: Repository Location
+              type: string
+              ui:field: RepoUrlPicker
+              ui:options:
+                allowedHosts:
+                  - github.com
+      steps:
+        - id: fetch-base
+          name: Fetch Base
+          action: fetch:template
+          input:
+            url: ./skeleton
+            values:
+              name: ${{ parameters.name }}
+              description: ${{ parameters.description }}
+              owner: ${{ parameters.owner }}
+              environment: ${{ parameters.environment }}
+              replicas: ${{ parameters.replicas }}
+              image: ${{ parameters.image }}
+              port: ${{ parameters.port }}
+              enableDatabase: ${{ parameters.enableDatabase }}
+              databaseSize: ${{ parameters.databaseSize }}
+              enableIngress: ${{ parameters.enableIngress }}
+              hostname: ${{ parameters.hostname }}
+        - id: publish
+          name: Publish
+          action: publish:github
+          input:
+            allowedHosts:
+              - github.com
+            description: This is ${{ parameters.name }}
+            repoUrl: ${{ parameters.repoUrl }}
+        - id: register
+          name: Register
+          action: catalog:register
+          input:
+            repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+            catalogInfoPath: '/catalog-info.yaml'
+        - id: create-webapp
+          name: Create WebApplication
+          action: kubernetes:apply
+          input:
+            namespaced: true
+            manifest: |
+              apiVersion: platform.idp/v1alpha1
+              kind: WebApplication
+              metadata:
+                name: ${{ parameters.name }}
+                namespace: ${{ parameters.environment }}
+                labels:
+                  app.kubernetes.io/name: ${{ parameters.name }}
+                  platform.idp/created-by: backstage
+                annotations:
+                  backstage.io/managed-by-location: url:${{ parameters.repoUrl }}
+                  backstage.io/managed-by-origin-location: url:${{ parameters.repoUrl }}
+              spec:
+                appName: ${{ parameters.name }}
+                image:
+                  repository: ${{ parameters.image.split(':')[0] }}
+                  tag: ${{ parameters.image.split(':')[1] or 'latest' }}
+                  pullPolicy: IfNotPresent
+                replicas: ${{ parameters.replicas }}
+                port: ${{ parameters.port }}
+                environment: ${{ parameters.environment }}
+                resources:
+                  requests:
+                    cpu: "100m"
+                    memory: "128Mi"
+                  limits:
+                    cpu: "500m"
+                    memory: "512Mi"
+                autoscaling:
+                  enabled: true
+                  minReplicas: ${{ parameters.replicas }}
+                  maxReplicas: ${{ parameters.replicas * 3 }}
+                  targetCPUUtilization: 70
+                ingress:
+                  enabled: ${{ parameters.enableIngress }}
+                  hostname: ${{ parameters.hostname or parameters.name + '.' + parameters.environment + '.idp.local' }}
+                  tls: true
+                database:
+                  enabled: ${{ parameters.enableDatabase }}
+                  type: postgresql
+                  size: ${{ parameters.databaseSize }}
+                monitoring:
+                  enabled: true
+                  metrics:
+                    enabled: true
+                    path: "/metrics"
+                    port: 9090
+      output:
+        links:
+          - title: Repository
+            url: ${{ steps.publish.output.remoteUrl }}
+          - title: Open in catalog
+            icon: catalog
+            entityRef: ${{ steps.register.output.entityRef }}
+          - title: View Application
+            url: https://${{ parameters.hostname or parameters.name + '.' + parameters.environment + '.idp.local' }}
+  nodejs-template.yaml: |
+    apiVersion: scaffolder.backstage.io/v1beta3
+    kind: Template
+    metadata:
+      name: nodejs-web-app
+      title: Node.js Web Application
+      description: Create a Node.js web application with Express.js
+      tags:
+        - recommended
+        - nodejs
+        - express
+        - web
+    spec:
+      owner: platform-team
+      type: service
+      parameters:
+        - title: Basic Information
+          required:
+            - name
+            - description
+          properties:
+            name:
+              title: Name
+              type: string
+              description: Unique name of the application
+              pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+            description:
+              title: Description
+              type: string
+              description: Help others understand what this application does
+            owner:
+              title: Owner
+              type: string
+              ui:field: OwnerPicker
+        - title: Runtime Configuration
+          properties:
+            nodeVersion:
+              title: Node.js Version
+              type: string
+              description: Node.js runtime version
+              default: "18"
+              enum:
+                - "16"
+                - "18"
+                - "20"
+            includeDatabase:
+              title: Include Database
+              type: boolean
+              description: Add PostgreSQL database connection
+              default: false
+            includeRedis:
+              title: Include Redis
+              type: boolean
+              description: Add Redis for caching/sessions
+              default: false
+        - title: Repository
+          required:
+            - repoUrl
+          properties:
+            repoUrl:
+              title: Repository Location
+              type: string
+              ui:field: RepoUrlPicker
+              ui:options:
+                allowedHosts:
+                  - github.com
+      steps:
+        - id: fetch-base
+          name: Fetch Base Template
+          action: fetch:template
+          input:
+            url: ./nodejs-skeleton
+            values:
+              name: ${{ parameters.name }}
+              description: ${{ parameters.description }}
+              owner: ${{ parameters.owner }}
+              nodeVersion: ${{ parameters.nodeVersion }}
+              includeDatabase: ${{ parameters.includeDatabase }}
+              includeRedis: ${{ parameters.includeRedis }}
+        - id: publish
+          name: Publish to GitHub
+          action: publish:github
+          input:
+            allowedHosts:
+              - github.com
+            description: ${{ parameters.description }}
+            repoUrl: ${{ parameters.repoUrl }}
+        - id: register
+          name: Register in Catalog
+          action: catalog:register
+          input:
+            repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+            catalogInfoPath: '/catalog-info.yaml'
+      output:
+        links:
+          - title: Repository
+            url: ${{ steps.publish.output.remoteUrl }}
+          - title: Open in catalog
+            icon: catalog
+            entityRef: ${{ steps.register.output.entityRef }}

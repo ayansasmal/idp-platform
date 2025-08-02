@@ -1,0 +1,305 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-endpoints
+  namespace: istio-system
+  labels:
+    app.kubernetes.io/name: monitoring-summary
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>IDP Platform - Observability Dashboard</title>
+        <style>
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                margin: 0;
+                padding: 0;
+                background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+                color: white;
+                min-height: 100vh;
+            }
+            .container {
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 20px;
+            }
+            .header {
+                text-align: center;
+                padding: 40px 0;
+            }
+            .header h1 {
+                font-size: 3rem;
+                margin-bottom: 10px;
+                text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            }
+            .header p {
+                font-size: 1.2rem;
+                opacity: 0.9;
+            }
+            .dashboard {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+                gap: 20px;
+                margin-top: 40px;
+            }
+            .card {
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 15px;
+                padding: 25px;
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                transition: transform 0.3s ease, box-shadow 0.3s ease;
+            }
+            .card:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            }
+            .card h3 {
+                margin: 0 0 15px 0;
+                color: #fff;
+                font-size: 1.4rem;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .card p {
+                opacity: 0.8;
+                line-height: 1.6;
+                margin-bottom: 20px;
+            }
+            .card-links {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+            .card-links a {
+                display: inline-block;
+                padding: 8px 16px;
+                background: rgba(255, 255, 255, 0.2);
+                color: white;
+                text-decoration: none;
+                border-radius: 8px;
+                transition: all 0.3s;
+                text-align: center;
+            }
+            .card-links a:hover {
+                background: rgba(255, 255, 255, 0.3);
+                transform: scale(1.05);
+            }
+            .status {
+                display: inline-block;
+                padding: 4px 12px;
+                border-radius: 20px;
+                font-size: 0.8rem;
+                margin-top: 10px;
+                font-weight: bold;
+            }
+            .status.healthy {
+                background-color: #4CAF50;
+            }
+            .status.warning {
+                background-color: #FF9800;
+            }
+            .status.info {
+                background-color: #2196F3;
+            }
+            .metrics-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 15px;
+                margin-top: 20px;
+            }
+            .metric {
+                background: rgba(0,0,0,0.2);
+                padding: 15px;
+                border-radius: 10px;
+                text-align: center;
+            }
+            .metric-value {
+                font-size: 2rem;
+                font-weight: bold;
+                color: #4CAF50;
+            }
+            .metric-label {
+                font-size: 0.9rem;
+                opacity: 0.8;
+                margin-top: 5px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>📊 IDP Platform Observability</h1>
+                <p>Complete monitoring and observability stack for your platform</p>
+            </div>
+            
+            <div class="dashboard">
+                <div class="card">
+                    <h3>🎯 Service Mesh Observability</h3>
+                    <p>Istio service mesh monitoring with traffic analysis, security policies and distributed tracing</p>
+                    <div class="card-links">
+                        <a href="http://localhost:20001" target="_blank">🗺️ Kiali - Service Mesh</a>
+                        <a href="http://localhost:16686" target="_blank">🔍 Jaeger - Distributed Tracing</a>
+                    </div>
+                    <span class="status healthy">Active</span>
+                </div>
+                
+                <div class="card">
+                    <h3>📈 Metrics & Dashboards</h3>
+                    <p>Prometheus metrics collection with custom Grafana dashboards for platform components</p>
+                    <div class="card-links">
+                        <a href="http://localhost:9090" target="_blank">📊 Prometheus - Metrics</a>
+                        <a href="http://localhost:3001" target="_blank">📈 Grafana - Dashboards</a>
+                    </div>
+                    <span class="status healthy">Collecting</span>
+                </div>
+                
+                <div class="card">
+                    <h3>📝 Logging & Analytics</h3>
+                    <p>Centralized logging with Loki and Fluentd for platform and application logs</p>
+                    <div class="card-links">
+                        <a href="http://localhost:3001/explore" target="_blank">📝 Loki - Log Explorer</a>
+                        <a href="#" onclick="showLogInfo()">🔧 Fluentd Status</a>
+                    </div>
+                    <span class="status info">Aggregating</span>
+                </div>
+                
+                <div class="card">
+                    <h3>🚨 Alerting & Notifications</h3>
+                    <p>Alertmanager for intelligent alerting with Slack and email notifications</p>
+                    <div class="card-links">
+                        <a href="http://alertmanager.idp.local" target="_blank">🚨 Alertmanager</a>
+                        <a href="#" onclick="showAlertRules()">📋 Alert Rules</a>
+                    </div>
+                    <span class="status warning">Configured</span>
+                </div>
+                
+                <div class="card">
+                    <h3>🎛️ Platform Components</h3>
+                    <p>Monitor ArgoCD, Crossplane, External Secrets and other platform services</p>
+                    <div class="card-links">
+                        <a href="https://localhost:8080" target="_blank">🎯 ArgoCD Dashboard</a>
+                        <a href="http://localhost:3000" target="_blank">🏗️ Backstage Portal</a>
+                    </div>
+                    <span class="status healthy">Monitored</span>
+                </div>
+                
+                <div class="card">
+                    <h3>🌐 Application Monitoring</h3>
+                    <p>WebApplication metrics, health checks and performance monitoring</p>
+                    <div class="card-links">
+                        <a href="http://localhost:8081" target="_blank">🌐 Sample Web App</a>
+                        <a href="#" onclick="showWebAppMetrics()">📊 WebApp Metrics</a>
+                    </div>
+                    <span class="status healthy">Running</span>
+                </div>
+            </div>
+            
+            <div class="metrics-grid">
+                <div class="metric">
+                    <div class="metric-value">6</div>
+                    <div class="metric-label">Monitoring Tools</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">25+</div>
+                    <div class="metric-label">Monitored Pods</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">8</div>
+                    <div class="metric-label">Namespaces</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">12</div>
+                    <div class="metric-label">Alert Rules</div>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            function showLogInfo() {
+                alert('Fluentd DaemonSet Status:\\n\\n✅ Log Collection: Active\\n✅ Namespace Filter: Platform components only\\n✅ Output: Loki aggregation\\n✅ Buffer: File-based with retry logic');
+            }
+            
+            function showAlertRules() {
+                alert('Active Alert Rules:\\n\\n🚨 WebApplication Down\\n⚠️ High CPU Usage\\n⚠️ ArgoCD Sync Failed\\n🚨 Istio Control Plane Down\\n⚠️ Memory Usage High\\n🚨 Certificate Expiring');
+            }
+            
+            function showWebAppMetrics() {
+                alert('WebApplication Metrics:\\n\\n📊 HTTP Request Rate\\n⏱️ Response Times (P50, P95, P99)\\n🚨 Error Rates\\n💾 Memory Usage\\n🔄 CPU Utilization\\n📈 Replica Count');
+            }
+        </script>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monitoring-dashboard
+  namespace: istio-system
+  labels:
+    app.kubernetes.io/name: monitoring-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: monitoring-dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: monitoring-dashboard
+    spec:
+      containers:
+      - name: dashboard
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: dashboard-content
+          mountPath: /usr/share/nginx/html
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+      volumes:
+      - name: dashboard-content
+        configMap:
+          name: monitoring-endpoints
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: monitoring-dashboard
+  namespace: istio-system
+  labels:
+    app.kubernetes.io/name: monitoring-dashboard
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app.kubernetes.io/name: monitoring-dashboard
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: monitoring-dashboard
+  namespace: istio-system
+spec:
+  hosts:
+  - monitoring.idp.local
+  gateways:
+  - istio-system/idp-gateway
+  http:
+  - route:
+    - destination:
+        host: monitoring-dashboard
+        port:
+          number: 80

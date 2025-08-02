@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(kubectl:*)",
+      "Bash(helm repo add:*)",
+      "Bash(helm repo:*)",
+      "Bash(helm install:*)",
+      "Bash(curl:*)"
+    ],
+    "deny": []
+  }
+}

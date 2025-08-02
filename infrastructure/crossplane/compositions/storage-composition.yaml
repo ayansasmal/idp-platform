@@ -1,0 +1,152 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: s3-storage
+  labels:
+    provider: aws
+    service: s3
+spec:
+  writeConnectionSecretsToNamespace: crossplane-system
+  compositeTypeRef:
+    apiVersion: platform.idp/v1alpha1
+    kind: XStorage
+  resources:
+  - name: s3-bucket
+    base:
+      apiVersion: s3.aws.upbound.io/v1beta1
+      kind: Bucket
+      spec:
+        providerConfigRef:
+          name: localstack-config
+        forProvider:
+          region: us-east-1
+          tags:
+            ManagedBy: crossplane
+    patches:
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.bucketName
+      toFieldPath: spec.forProvider.bucket
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.environment
+      toFieldPath: spec.forProvider.tags.Environment
+    - type: FromCompositeFieldPath
+      fromFieldPath: metadata.name
+      toFieldPath: metadata.name
+  - name: bucket-policy
+    base:
+      apiVersion: s3.aws.upbound.io/v1beta1
+      kind: BucketPolicy
+      spec:
+        providerConfigRef:
+          name: localstack-config
+        forProvider:
+          region: us-east-1
+          policy: |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": "*",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:DeleteObject"
+                  ],
+                  "Resource": "arn:aws:s3:::BUCKET_NAME/*"
+                }
+              ]
+            }
+    patches:
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.bucketName
+      toFieldPath: spec.forProvider.bucket
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.bucketName
+      toFieldPath: spec.forProvider.policy
+      transforms:
+      - type: string
+        string:
+          fmt: |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": "*",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:DeleteObject"
+                  ],
+                  "Resource": "arn:aws:s3:::%s/*"
+                }
+              ]
+            }
+  - name: bucket-versioning
+    base:
+      apiVersion: s3.aws.upbound.io/v1beta1
+      kind: BucketVersioning
+      spec:
+        providerConfigRef:
+          name: localstack-config
+        forProvider:
+          region: us-east-1
+          versioningConfiguration:
+          - status: Enabled
+    patches:
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.bucketName
+      toFieldPath: spec.forProvider.bucket
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.versioning
+      toFieldPath: spec.forProvider.versioningConfiguration[0].status
+      transforms:
+      - type: map
+        map:
+          true: Enabled
+          false: Suspended
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xstorages.platform.idp
+spec:
+  group: platform.idp
+  names:
+    kind: XStorage
+    plural: xstorages
+  versions:
+  - name: v1alpha1
+    served: true
+    referenceable: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              bucketName:
+                type: string
+                description: Name of the S3 bucket
+              environment:
+                type: string
+                enum: ["development", "staging", "production"]
+                default: "development"
+                description: Environment for the storage
+              versioning:
+                type: boolean
+                default: true
+                description: Enable versioning on the bucket
+            required:
+            - bucketName
+          status:
+            type: object
+            properties:
+              ready:
+                type: boolean
+                description: Whether the storage is ready
+              bucketArn:
+                type: string
+                description: ARN of the created bucket

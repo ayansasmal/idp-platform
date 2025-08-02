@@ -1,0 +1,171 @@
+#!/bin/bash
+
+# IDP Platform CLI - Direct Implementation
+# Main entry point for IDP platform operations
+
+set -e
+
+# Main command handling
+case "${1:-help}" in
+    "create")
+        APP_NAME="${2:-}"
+        IMAGE="${3:-nginx:latest}"
+        NAMESPACE="${4:-development}"
+        ENVIRONMENT="${5:-development}"
+        REPLICAS="${6:-2}"
+        
+        if [ -z "$APP_NAME" ]; then
+            echo "Error: Application name is required"
+            echo "Usage: $0 create <app-name> <image> [namespace] [environment] [replicas]"
+            exit 1
+        fi
+        
+        # Validate app name
+        if [[ ! "$APP_NAME" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]]; then
+            echo "Error: App name must be lowercase alphanumeric with hyphens"
+            exit 1
+        fi
+        
+        echo "Creating WebApplication: $APP_NAME"
+        echo "Image: $IMAGE"
+        echo "Namespace: $NAMESPACE"
+        
+        # Generate hostname
+        HOSTNAME="${APP_NAME}.${ENVIRONMENT}.idp.local"
+        
+        # Create namespace if it doesn't exist
+        kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+        kubectl label namespace "$NAMESPACE" istio-injection=enabled --overwrite
+        
+        # Create WebApplication resource
+        cat <<EOF | kubectl apply -f -
+apiVersion: platform.idp/v1alpha1
+kind: WebApplication
+metadata:
+  name: $APP_NAME
+  namespace: $NAMESPACE
+  labels:
+    app.kubernetes.io/name: $APP_NAME
+    platform.idp/created-by: idp-cli
+spec:
+  appName: $APP_NAME
+  image:
+    repository: ${IMAGE%:*}
+    tag: ${IMAGE##*:}
+    pullPolicy: IfNotPresent
+  replicas: $REPLICAS
+  port: 80
+  environment: $ENVIRONMENT
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  autoscaling:
+    enabled: true
+    minReplicas: $REPLICAS
+    maxReplicas: $(($REPLICAS * 3))
+    targetCPUUtilization: 70
+  ingress:
+    enabled: true
+    hostname: $HOSTNAME
+    tls: true
+  database:
+    enabled: false
+  monitoring:
+    enabled: true
+    metrics:
+      enabled: true
+      path: "/metrics"
+      port: 9090
+EOF
+        
+        echo
+        echo "✅ WebApplication '$APP_NAME' created successfully!"
+        echo "🌐 URL: https://$HOSTNAME"
+        echo "📊 Monitor: kubectl get webapp $APP_NAME -n $NAMESPACE"
+        ;;
+    "list")
+        NAMESPACE="${2:-}"
+        
+        if [ -z "$NAMESPACE" ]; then
+            echo "📋 All WebApplications across namespaces:"
+            kubectl get webapp --all-namespaces
+        else
+            echo "📋 WebApplications in namespace: $NAMESPACE"
+            kubectl get webapp -n "$NAMESPACE"
+        fi
+        ;;
+    "status")
+        APP_NAME="${2:-}"
+        NAMESPACE="${3:-development}"
+        
+        if [ -z "$APP_NAME" ]; then
+            echo "Error: Application name is required"
+            echo "Usage: $0 status <app-name> [namespace]"
+            exit 1
+        fi
+        
+        echo "🔍 Status for WebApplication: $APP_NAME"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        
+        kubectl get webapp "$APP_NAME" -n "$NAMESPACE" -o wide
+        ;;
+    "delete")
+        APP_NAME="${2:-}"
+        NAMESPACE="${3:-development}"
+        
+        if [ -z "$APP_NAME" ]; then
+            echo "Error: Application name is required"
+            echo "Usage: $0 delete <app-name> [namespace]"
+            exit 1
+        fi
+        
+        kubectl delete webapp "$APP_NAME" -n "$NAMESPACE"
+        echo "✅ WebApplication '$APP_NAME' deleted successfully!"
+        ;;
+    "help"|*)
+        cat <<EOF
+🚀 IDP Platform CLI
+
+USAGE:
+    $0 <command> [options]
+
+COMMANDS:
+    create <app-name> <image> [namespace] [environment] [replicas]
+        Create a new WebApplication
+        
+    delete <app-name> [namespace]
+        Delete a WebApplication
+        
+    list [namespace]
+        List WebApplications (all namespaces if none specified)
+        
+    status <app-name> [namespace]
+        Show detailed status of a WebApplication
+        
+    help
+        Show this help message
+
+EXAMPLES:
+    # Create a simple nginx app
+    $0 create my-app nginx:latest
+    
+    # Create an app in production
+    $0 create api-server myapp:v1.2.3 production production 3
+    
+    # List all apps
+    $0 list
+    
+    # Check app status
+    $0 status my-app development
+    
+    # Delete an app
+    $0 delete my-app
+
+For more information, visit: https://github.com/your-org/idp-platform
+EOF
+        ;;
+esac

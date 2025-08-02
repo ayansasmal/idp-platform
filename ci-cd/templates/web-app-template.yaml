@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{.Values.appName}}
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: {{.Values.appName}}
+    app.kubernetes.io/part-of: idp-platform
+spec:
+  project: {{.Values.project | default "default"}}
+  source:
+    repoURL: {{.Values.repoURL}}
+    targetRevision: {{.Values.targetRevision | default "HEAD"}}
+    path: {{.Values.path | default "k8s"}}
+    helm:
+      valueFiles:
+      - values-{{.Values.environment}}.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{.Values.namespace}}
+  syncPolicy:
+    automated:
+      prune: {{.Values.autoSync.prune | default true}}
+      selfHeal: {{.Values.autoSync.selfHeal | default true}}
+    syncOptions:
+    - CreateNamespace=true
+    - PruneLast=true
+  revisionHistoryLimit: 3

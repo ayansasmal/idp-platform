@@ -1,0 +1,178 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-idp-config
+  namespace: istio-system
+  labels:
+    app.kubernetes.io/name: prometheus-idp
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    rule_files:
+      - "/etc/prometheus/rules/*.yml"
+
+    scrape_configs:
+      # Kubernetes API server
+      - job_name: 'kubernetes-apiservers'
+        kubernetes_sd_configs:
+        - role: endpoints
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+          action: keep
+          regex: default;kubernetes;https
+
+      # Kubernetes nodes
+      - job_name: 'kubernetes-nodes'
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        kubernetes_sd_configs:
+        - role: node
+        relabel_configs:
+        - action: labelmap
+          regex: __meta_kubernetes_node_label_(.+)
+
+      # Kubernetes pods
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+        - role: pod
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+          action: keep
+          regex: true
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+          action: replace
+          target_label: __metrics_path__
+          regex: (.+)
+        - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+          action: replace
+          regex: ([^:]+)(?::\d+)?;(\d+)
+          replacement: $1:$2
+          target_label: __address__
+
+      # ArgoCD metrics
+      - job_name: 'argocd-server-metrics'
+        static_configs:
+        - targets: ['argocd-server-metrics.argocd.svc.cluster.local:8083']
+        metrics_path: /metrics
+
+      - job_name: 'argocd-application-controller-metrics'
+        static_configs:
+        - targets: ['argocd-application-controller-metrics.argocd.svc.cluster.local:8082']
+        metrics_path: /metrics
+
+      # Istio control plane
+      - job_name: 'istiod'
+        static_configs:
+        - targets: ['istiod.istio-system.svc.cluster.local:15014']
+        metrics_path: /stats/prometheus
+
+      # Envoy sidecars
+      - job_name: 'envoy-stats'
+        kubernetes_sd_configs:
+        - role: endpoints
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+          action: keep
+          regex: .*-metrics;http-monitoring
+        - source_labels: [__address__, __meta_kubernetes_endpoint_port_number]
+          action: replace
+          regex: ([^:]+)(?::\d+)?;(\d+)
+          replacement: $1:15090
+          target_label: __address__
+        - action: labelmap
+          regex: __meta_kubernetes_service_label_(.+)
+        - source_labels: [__meta_kubernetes_namespace]
+          action: replace
+          target_label: namespace
+        - source_labels: [__meta_kubernetes_service_name]
+          action: replace
+          target_label: service_name
+
+      # Crossplane
+      - job_name: 'crossplane'
+        static_configs:
+        - targets: ['crossplane.crossplane-system.svc.cluster.local:8080']
+        metrics_path: /metrics
+
+      # External Secrets Operator
+      - job_name: 'external-secrets'
+        static_configs:
+        - targets: ['external-secrets.external-secrets-system.svc.cluster.local:8080']
+        metrics_path: /metrics
+
+      # cert-manager
+      - job_name: 'cert-manager'
+        static_configs:
+        - targets: ['cert-manager.cert-manager.svc.cluster.local:9402']
+        metrics_path: /metrics
+
+      # WebApplication metrics (sample app)
+      - job_name: 'webapps'
+        kubernetes_sd_configs:
+        - role: pod
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_pod_label_platform_idp_type]
+          action: keep
+          regex: web-application
+        - source_labels: [__address__]
+          action: replace
+          regex: ([^:]+)(?::\d+)?
+          replacement: $1:9090
+          target_label: __address__
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(.+)
+        - source_labels: [__meta_kubernetes_namespace]
+          action: replace
+          target_label: namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: pod
+
+  alerts.yml: |
+    groups:
+    - name: idp-platform
+      rules:
+      - alert: WebApplicationDown
+        expr: up{job="webapps"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "WebApplication {{ $labels.pod }} is down"
+          description: "WebApplication {{ $labels.pod }} in namespace {{ $labels.namespace }} has been down for more than 1 minute."
+
+      - alert: HighCPUUsage
+        expr: rate(container_cpu_usage_seconds_total[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "Container {{ $labels.container }} in pod {{ $labels.pod }} has high CPU usage."
+
+      - alert: ArgocdSyncFailed
+        expr: argocd_app_sync_total{phase="Failed"} > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ArgoCD sync failed"
+          description: "ArgoCD application {{ $labels.name }} sync failed."
+
+      - alert: IstiodDown
+        expr: up{job="istiod"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Istio control plane is down"
+          description: "Istiod has been down for more than 2 minutes."

@@ -1,0 +1,41 @@
+apiVersion: ecr.aws.upbound.io/v1beta1
+kind: Repository
+metadata:
+  name: idp-web-app-repo
+spec:
+  providerConfigRef:
+    name: localstack-config
+  forProvider:
+    name: idp/web-app
+    region: us-east-1
+    imageScanningConfiguration:
+    - scanOnPush: true
+    imageTagMutability: MUTABLE
+---
+apiVersion: ecr.aws.upbound.io/v1beta1
+kind: LifecyclePolicy
+metadata:
+  name: idp-web-app-lifecycle
+spec:
+  providerConfigRef:
+    name: localstack-config
+  forProvider:
+    repository: idp/web-app
+    region: us-east-1
+    policy: |
+      {
+        "rules": [
+          {
+            "rulePriority": 1,
+            "description": "Keep last 10 images",
+            "selection": {
+              "tagStatus": "tagged",
+              "countType": "imageCountMoreThan",
+              "countNumber": 10
+            },
+            "action": {
+              "type": "expire"
+            }
+          }
+        ]
+      }
