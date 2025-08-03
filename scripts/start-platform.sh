@@ -19,7 +19,7 @@ PIDS_FILE="${SCRIPT_DIR}/.port-forward-pids"
 # Service configurations  
 get_service_config() {
     case "$1" in
-        "argocd") echo "argocd:argocd-server:8080:80" ;;
+        "argocd") echo "argocd:argocd-server:8080:443" ;;
         "backstage") echo "backstage:backstage:3000:80" ;;
         "workflows") echo "argo-workflows:argo-workflows-server:4000:2746" ;;
         "grafana") echo "istio-system:grafana:3001:3000" ;;

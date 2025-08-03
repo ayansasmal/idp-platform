@@ -5,7 +5,11 @@
       "Bash(helm repo add:*)",
       "Bash(helm repo:*)",
       "Bash(helm install:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(echo)"
     ],
     "deny": []
   }

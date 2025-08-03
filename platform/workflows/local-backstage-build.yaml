@@ -1,0 +1,109 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: local-backstage-build
+  namespace: argo-workflows
+spec:
+  entrypoint: build-backstage
+  serviceAccountName: argo-workflows-workflow-controller
+  arguments:
+    parameters:
+    - name: image-name
+      value: "backstage-app-real"
+    - name: image-tag
+      value: "local-v1.0"
+
+  templates:
+  - name: build-backstage
+    dag:
+      tasks:
+      - name: prepare-context
+        template: create-build-context
+      - name: build-image
+        template: build-and-push
+        dependencies: [prepare-context]
+      - name: verify-build
+        template: verify-success
+        dependencies: [build-image]
+
+  - name: create-build-context
+    container:
+      image: alpine:latest
+      command: [sh, -c]
+      args:
+        - |
+          echo "🚀 Creating Backstage build context"
+          mkdir -p /workspace/backstage-app-real/backstage
+          
+          # Create a simple Dockerfile for testing
+          cat > /workspace/backstage-app-real/backstage/Dockerfile.prebuilt << 'EOF'
+          FROM node:20-bookworm-slim
+          WORKDIR /app
+          COPY package.json ./
+          RUN echo '{"name":"backstage-test","version":"1.0.0"}' > package.json
+          RUN npm install express
+          RUN echo 'const express = require("express"); const app = express(); app.get("/", (req,res) => res.send("Backstage Test App")); app.listen(7007, () => console.log("Running on port 7007"));' > server.js
+          EXPOSE 7007
+          CMD ["node", "server.js"]
+          EOF
+          
+          # Create package.json
+          echo '{"name":"backstage-test","version":"1.0.0","dependencies":{"express":"^4.18.0"}}' > /workspace/backstage-app-real/backstage/package.json
+          
+          echo "✅ Build context created"
+          echo "📁 Context structure:"
+          find /workspace -type f
+          echo "📄 Dockerfile content:"
+          cat /workspace/backstage-app-real/backstage/Dockerfile.prebuilt
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+    volumes:
+    - name: workspace
+      emptyDir: {}
+
+  - name: build-and-push
+    container:
+      image: gcr.io/kaniko-project/executor:debug
+      command: ["/kaniko/executor"]
+      args:
+        - "--dockerfile=/workspace/backstage-app-real/backstage/Dockerfile.prebuilt"
+        - "--context=/workspace/backstage-app-real/backstage"
+        - "--destination=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:{{workflow.parameters.image-tag}}"
+        - "--destination=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:build-{{workflow.uid}}"
+        - "--insecure"
+        - "--skip-tls-verify"
+        - "--insecure-registry=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566"
+        - "--cache=false"
+        - "--force"
+        - "--verbosity=info"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+      env:
+      - name: AWS_ACCESS_KEY_ID
+        value: "test"
+      - name: AWS_SECRET_ACCESS_KEY
+        value: "test"
+      - name: AWS_DEFAULT_REGION
+        value: "us-east-1"
+    volumes:
+    - name: workspace
+      emptyDir: {}
+
+  - name: verify-success
+    container:
+      image: alpine:latest
+      command: [sh, -c]
+      args:
+        - |
+          echo "🎉 Backstage build completed successfully!"
+          echo "📦 Image built: 000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:{{workflow.parameters.image-tag}}"
+          echo "🔖 Build ID: build-{{workflow.uid}}"
+          echo "⏰ Completed at: $(date)"
+          echo ""
+          echo "🚀 Ready to deploy to IDP!"
+
+  volumes:
+  - name: workspace
+    emptyDir: {}

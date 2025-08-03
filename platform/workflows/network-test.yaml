@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: network-test
+  namespace: argo-workflows
+spec:
+  entrypoint: test-connectivity
+  serviceAccountName: argo-workflows-workflow-controller
+  
+  templates:
+  - name: test-connectivity
+    container:
+      image: alpine/curl:latest
+      command: [sh, -c]
+      args:
+        - |
+          echo "Testing network connectivity..."
+          echo "1. Testing DNS resolution:"
+          nslookup github.com
+          echo ""
+          echo "2. Testing HTTP connectivity to GitHub:"
+          curl -v --connect-timeout 10 https://api.github.com/zen || echo "GitHub API failed"
+          echo ""
+          echo "3. Testing HTTP connectivity to Google:"
+          curl -v --connect-timeout 10 https://www.google.com || echo "Google failed"
+          echo ""
+          echo "4. Testing basic internet:"
+          ping -c 3 8.8.8.8 || echo "Ping failed"

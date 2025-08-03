@@ -18,12 +18,12 @@ spec:
       kind: SubnetGroup
       spec:
         providerConfigRef:
-          name: localstack-config
+          name: rds-localstack-config
         forProvider:
           region: us-east-1
           subnetIds:
-          - subnet-12345
-          - subnet-67890
+          - subnet-1234567890abcdef1
+          - subnet-1234567890abcdef2
           tags:
             Environment: development
     patches:
@@ -43,11 +43,11 @@ spec:
       kind: Instance
       spec:
         providerConfigRef:
-          name: localstack-config
+          name: rds-localstack-config
         forProvider:
           region: us-east-1
           engine: postgres
-          engineVersion: "13.7"
+          engineVersion: "15.4"
           instanceClass: db.t3.micro
           allocatedStorage: 20
           storageType: gp2

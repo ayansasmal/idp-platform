@@ -124,16 +124,27 @@ spec:
             - name: NODE_ENV
               value: "production"
             - name: POSTGRES_HOST
-              value: "postgres"
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-db-connection
+                  key: endpoint
             - name: POSTGRES_PORT
-              value: "5432"
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-db-connection
+                  key: port
             - name: POSTGRES_USER
-              value: "backstage"
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-db-connection
+                  key: username
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: backstage-secrets
-                  key: postgres-password
+                  name: backstage-db-connection
+                  key: password
+            - name: POSTGRES_DB
+              value: "backstage"
             # AWS Cognito Environment Variables
             - name: COGNITO_CLIENT_ID
               valueFrom:

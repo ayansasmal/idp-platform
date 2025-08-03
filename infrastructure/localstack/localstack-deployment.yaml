@@ -27,13 +27,13 @@ spec:
     spec:
       containers:
         - name: localstack
-          image: localstack/localstack:3.7.1
+          image: localstack/localstack:3.0
           ports:
             - containerPort: 4566
               name: edge
           env:
             - name: SERVICES
-              value: "ecr,s3,secretsmanager,iam"
+              value: "ecr,s3,secretsmanager,iam,cognito-idp,rds"
             - name: DEBUG
               value: "1"
             - name: DATA_DIR

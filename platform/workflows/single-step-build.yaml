@@ -1,0 +1,95 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: single-step-build
+  namespace: argo-workflows
+spec:
+  entrypoint: build-all-in-one
+  serviceAccountName: argo-workflows-workflow-controller
+  arguments:
+    parameters:
+    - name: image-name
+      value: "backstage-app-real"
+    - name: image-tag
+      value: "single-v1.0"
+
+  templates:
+  - name: build-all-in-one
+    container:
+      image: gcr.io/kaniko-project/executor:debug
+      command: [sh, -c]
+      args:
+        - |
+          echo "🚀 Building Backstage image in single step"
+          
+          # Create build directory
+          mkdir -p /workspace/app
+          cd /workspace/app
+          
+          # Create a simple test application
+          cat > package.json << 'EOF'
+          {
+            "name": "backstage-test",
+            "version": "1.0.0",
+            "dependencies": {
+              "express": "^4.18.0"
+            }
+          }
+          EOF
+          
+          cat > server.js << 'EOF'
+          const express = require('express');
+          const app = express();
+          
+          app.get('/', (req, res) => {
+            res.send(`
+              <h1>🎭 Backstage Test App</h1>
+              <p>Built with Argo Workflows!</p>
+              <p>Build ID: {{workflow.uid}}</p>
+              <p>Image: {{workflow.parameters.image-name}}:{{workflow.parameters.image-tag}}</p>
+            `);
+          });
+          
+          app.listen(7007, () => {
+            console.log('Backstage test app running on port 7007');
+          });
+          EOF
+          
+          # Create Dockerfile
+          cat > Dockerfile << 'EOF'
+          FROM node:20-bookworm-slim
+          WORKDIR /app
+          COPY package.json server.js ./
+          RUN npm install
+          EXPOSE 7007
+          CMD ["node", "server.js"]
+          EOF
+          
+          echo "✅ Build context created"
+          echo "📁 Files created:"
+          ls -la
+          echo ""
+          echo "📄 Dockerfile:"
+          cat Dockerfile
+          echo ""
+          
+          # Build and push with kaniko
+          echo "🔨 Building image with Kaniko..."
+          /kaniko/executor \
+            --dockerfile=./Dockerfile \
+            --context=. \
+            --destination=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:{{workflow.parameters.image-tag}} \
+            --destination=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:build-{{workflow.uid}} \
+            --insecure \
+            --skip-tls-verify \
+            --insecure-registry=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566 \
+            --cache=false \
+            --force \
+            --verbosity=info
+      env:
+      - name: AWS_ACCESS_KEY_ID
+        value: "test"
+      - name: AWS_SECRET_ACCESS_KEY
+        value: "test"
+      - name: AWS_DEFAULT_REGION
+        value: "us-east-1"

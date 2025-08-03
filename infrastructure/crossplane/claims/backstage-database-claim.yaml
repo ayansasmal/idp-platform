@@ -1,0 +1,31 @@
+apiVersion: platform.idp/v1alpha1
+kind: XDatabase
+metadata:
+  name: backstage-db
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: backstage-database
+    platform.idp/component: database
+spec:
+  dbName: backstage
+  size: small
+  environment: development
+  writeConnectionSecretsToRef:
+    name: backstage-db-connection
+    namespace: backstage
+---
+apiVersion: platform.idp/v1alpha1
+kind: XDatabase
+metadata:
+  name: argocd-db
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-database
+    platform.idp/component: database
+spec:
+  dbName: argocd
+  size: small
+  environment: development
+  writeConnectionSecretsToRef:
+    name: argocd-db-connection
+    namespace: argocd

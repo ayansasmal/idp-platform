@@ -1,0 +1,100 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: stable-backstage-build
+  namespace: argo-workflows
+spec:
+  entrypoint: build-backstage
+  serviceAccountName: argo-workflows-workflow-controller
+  arguments:
+    parameters:
+    - name: repo-url
+      value: "https://github.com/ayansasmal/idp-platform"
+    - name: branch
+      value: "main"
+    - name: image-name
+      value: "backstage-app-real"
+    - name: image-tag
+      value: "stable-v1.0"
+
+  templates:
+  - name: build-backstage
+    dag:
+      tasks:
+      - name: clone-repo
+        template: git-clone
+      - name: build-image
+        template: build-and-push
+        dependencies: [clone-repo]
+      - name: verify-build
+        template: verify-success
+        dependencies: [build-image]
+
+  - name: git-clone
+    container:
+      image: alpine/git:latest
+      command: [sh, -c]
+      args:
+        - |
+          echo "🚀 Starting Backstage build workflow"
+          echo "Cloning repository: {{workflow.parameters.repo-url}}"
+          git clone {{workflow.parameters.repo-url}} /workspace
+          cd /workspace
+          git checkout {{workflow.parameters.branch}}
+          echo "✅ Repository cloned successfully"
+          echo "📁 Checking backstage-app-real structure:"
+          ls -la /workspace/backstage-app-real/backstage/
+          echo "📄 Dockerfile.prebuilt exists:"
+          ls -la /workspace/backstage-app-real/backstage/Dockerfile.prebuilt
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+    volumes:
+    - name: workspace
+      emptyDir: {}
+
+  - name: build-and-push
+    container:
+      image: gcr.io/kaniko-project/executor:debug
+      command: ["/kaniko/executor"]
+      args:
+        - "--dockerfile=/workspace/backstage-app-real/backstage/Dockerfile.prebuilt"
+        - "--context=/workspace/backstage-app-real/backstage"
+        - "--destination=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:{{workflow.parameters.image-tag}}"
+        - "--destination=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:build-{{workflow.uid}}"
+        - "--insecure"
+        - "--skip-tls-verify"
+        - "--insecure-registry=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566"
+        - "--cache=false"
+        - "--force"
+        - "--verbosity=info"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+      env:
+      - name: AWS_ACCESS_KEY_ID
+        value: "test"
+      - name: AWS_SECRET_ACCESS_KEY
+        value: "test"
+      - name: AWS_DEFAULT_REGION
+        value: "us-east-1"
+    volumes:
+    - name: workspace
+      emptyDir: {}
+
+  - name: verify-success
+    container:
+      image: alpine:latest
+      command: [sh, -c]
+      args:
+        - |
+          echo "🎉 Backstage build completed successfully!"
+          echo "📦 Image built: 000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:{{workflow.parameters.image-tag}}"
+          echo "🔖 Build ID: build-{{workflow.uid}}"
+          echo "⏰ Completed at: $(date)"
+          echo ""
+          echo "🚀 Ready to deploy to IDP!"
+
+  volumes:
+  - name: workspace
+    emptyDir: {}
