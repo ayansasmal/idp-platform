@@ -21,7 +21,7 @@ get_service_config() {
     case "$1" in
         "argocd") echo "argocd:argocd-server:8080:80" ;;
         "backstage") echo "backstage:backstage:3000:80" ;;
-        "workflows") echo "argo-workflows:argo-server:4000:2746" ;;
+        "workflows") echo "argo-workflows:argo-workflows-server:4000:2746" ;;
         "grafana") echo "istio-system:grafana:3001:3000" ;;
         "prometheus") echo "istio-system:prometheus:9090:9090" ;;
         "jaeger") echo "istio-system:tracing:16686:80" ;;
