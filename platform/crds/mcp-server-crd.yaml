@@ -1,0 +1,231 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: mcpservers.platform.idp
+spec:
+  group: platform.idp
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                serverType:
+                  type: string
+                  enum:
+                    - code-intelligence
+                    - infrastructure-intelligence
+                    - document-processing
+                    - workflow-automation
+                    - security-analysis
+                  description: Type of MCP server to deploy
+                runtime:
+                  type: string
+                  enum:
+                    - python
+                    - nodejs
+                    - go
+                    - rust
+                  default: python
+                  description: Runtime environment for the MCP server
+                capabilities:
+                  type: array
+                  items:
+                    type: string
+                  description: List of capabilities provided by this MCP server
+                modelEndpoints:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      endpoint:
+                        type: string
+                      modelType:
+                        type: string
+                        enum:
+                          - openai
+                          - anthropic
+                          - ollama
+                          - custom
+                      authMethod:
+                        type: string
+                        enum:
+                          - api-key
+                          - oauth
+                          - service-account
+                          - none
+                  description: AI/ML model endpoints to integrate with
+                resources:
+                  type: object
+                  properties:
+                    requests:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                          default: "500m"
+                        memory:
+                          type: string
+                          default: "1Gi"
+                    limits:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                          default: "2"
+                        memory:
+                          type: string
+                          default: "4Gi"
+                        gpu:
+                          type: string
+                          default: "0"
+                  description: Resource requirements for the MCP server
+                scaling:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    minReplicas:
+                      type: integer
+                      default: 1
+                      minimum: 1
+                    maxReplicas:
+                      type: integer
+                      default: 10
+                      minimum: 1
+                    targetCPUUtilization:
+                      type: integer
+                      default: 70
+                      minimum: 1
+                      maximum: 100
+                  description: Auto-scaling configuration
+                security:
+                  type: object
+                  properties:
+                    authentication:
+                      type: boolean
+                      default: true
+                    authorization:
+                      type: boolean
+                      default: true
+                    encryption:
+                      type: boolean
+                      default: true
+                    dataRetention:
+                      type: string
+                      default: "30d"
+                    auditLogging:
+                      type: boolean
+                      default: true
+                  description: Security configuration for the MCP server
+                networking:
+                  type: object
+                  properties:
+                    internalOnly:
+                      type: boolean
+                      default: false
+                    loadBalancer:
+                      type: boolean
+                      default: true
+                    istioInjection:
+                      type: boolean
+                      default: true
+                  description: Networking configuration
+              required:
+                - serverType
+                - capabilities
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum:
+                    - Pending
+                    - Running
+                    - Failed
+                    - Scaling
+                    - Updating
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                replicas:
+                  type: integer
+                readyReplicas:
+                  type: integer
+                endpoints:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      url:
+                        type: string
+                      protocol:
+                        type: string
+                metrics:
+                  type: object
+                  properties:
+                    requestsPerSecond:
+                      type: number
+                    averageLatency:
+                      type: string
+                    errorRate:
+                      type: number
+                    tokenUsage:
+                      type: object
+                      properties:
+                        inputTokens:
+                          type: integer
+                        outputTokens:
+                          type: integer
+                        totalCost:
+                          type: string
+      additionalPrinterColumns:
+        - name: Type
+          type: string
+          description: MCP Server Type
+          jsonPath: .spec.serverType
+        - name: Status
+          type: string
+          description: Current Status
+          jsonPath: .status.phase
+        - name: Replicas
+          type: integer
+          description: Number of Replicas
+          jsonPath: .status.replicas
+        - name: Ready
+          type: integer
+          description: Number of Ready Replicas
+          jsonPath: .status.readyReplicas
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: mcpservers
+    singular: mcpserver
+    kind: MCPServer
+    shortNames:
+      - mcp

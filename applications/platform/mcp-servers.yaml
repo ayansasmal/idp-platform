@@ -1,0 +1,161 @@
+apiVersion: platform.idp/v1alpha1
+kind: MCPServer
+metadata:
+  name: code-intelligence-mcp
+  namespace: mcp-platform
+  labels:
+    app.kubernetes.io/name: code-intelligence-mcp
+    app.kubernetes.io/component: mcp-server
+    app.kubernetes.io/part-of: idp-platform
+    platform.idp/type: mcp-server
+    platform.idp/environment: development
+spec:
+  serverType: code-intelligence
+  runtime: python
+  capabilities:
+    - code-completion
+    - code-review
+    - vulnerability-detection
+    - refactoring-suggestions
+    - test-generation
+    - documentation-generation
+  modelEndpoints:
+    - name: ollama-local
+      endpoint: http://ollama.ai-services.svc.cluster.local:11434
+      modelType: ollama
+      authMethod: none
+    - name: openai-gpt4
+      endpoint: https://api.openai.com/v1
+      modelType: openai
+      authMethod: api-key
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+      gpu: "0"
+  scaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilization: 70
+  security:
+    authentication: true
+    authorization: true
+    encryption: true
+    dataRetention: "7d"
+    auditLogging: true
+  networking:
+    internalOnly: false
+    loadBalancer: true
+    istioInjection: true
+---
+apiVersion: platform.idp/v1alpha1
+kind: MCPServer
+metadata:
+  name: infrastructure-intelligence-mcp
+  namespace: mcp-platform
+  labels:
+    app.kubernetes.io/name: infrastructure-intelligence-mcp
+    app.kubernetes.io/component: mcp-server
+    app.kubernetes.io/part-of: idp-platform
+    platform.idp/type: mcp-server
+    platform.idp/environment: development
+spec:
+  serverType: infrastructure-intelligence
+  runtime: nodejs
+  capabilities:
+    - resource-optimization
+    - cost-analysis
+    - security-compliance
+    - deployment-planning
+    - performance-analysis
+    - capacity-planning
+  modelEndpoints:
+    - name: claude-3-sonnet
+      endpoint: https://api.anthropic.com/v1
+      modelType: anthropic
+      authMethod: api-key
+    - name: ollama-local
+      endpoint: http://ollama.ai-services.svc.cluster.local:11434
+      modelType: ollama
+      authMethod: none
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+      gpu: "0"
+  scaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilization: 70
+  security:
+    authentication: true
+    authorization: true
+    encryption: true
+    dataRetention: "30d"
+    auditLogging: true
+  networking:
+    internalOnly: false
+    loadBalancer: true
+    istioInjection: true
+---
+apiVersion: platform.idp/v1alpha1
+kind: MCPServer
+metadata:
+  name: document-intelligence-mcp
+  namespace: mcp-platform
+  labels:
+    app.kubernetes.io/name: document-intelligence-mcp
+    app.kubernetes.io/component: mcp-server
+    app.kubernetes.io/part-of: idp-platform
+    platform.idp/type: mcp-server
+    platform.idp/environment: development
+spec:
+  serverType: document-processing
+  runtime: python
+  capabilities:
+    - documentation-generation
+    - api-documentation
+    - code-documentation
+    - knowledge-extraction
+    - content-summarization
+    - translation
+  modelEndpoints:
+    - name: gpt-4o
+      endpoint: https://api.openai.com/v1
+      modelType: openai
+      authMethod: api-key
+    - name: ollama-local
+      endpoint: http://ollama.ai-services.svc.cluster.local:11434
+      modelType: ollama
+      authMethod: none
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "6Gi"
+      gpu: "0"
+  scaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 8
+    targetCPUUtilization: 70
+  security:
+    authentication: true
+    authorization: true
+    encryption: true
+    dataRetention: "90d"
+    auditLogging: true
+  networking:
+    internalOnly: false
+    loadBalancer: true
+    istioInjection: true

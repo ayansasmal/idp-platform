@@ -1,0 +1,295 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-mcp-plugin-config
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: backstage-mcp-plugin
+    app.kubernetes.io/component: configuration
+    app.kubernetes.io/part-of: idp-platform
+data:
+  mcp-plugin-config.yaml: |
+    mcp:
+      # MCP Platform Configuration
+      platform:
+        namespace: "mcp-platform"
+        apiVersion: "platform.idp/v1alpha1"
+        kind: "MCPServer"
+        
+      # Kubernetes API Configuration
+      kubernetes:
+        clusterName: "idp-cluster"
+        serviceAccountToken: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        clusterLocatorMethods:
+          - type: "config"
+            clusters:
+              - name: "idp-cluster"
+                url: "https://kubernetes.default.svc"
+                authProvider: "serviceAccount"
+                serviceAccountToken: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+                caFile: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+      
+      # MCP Server Templates
+      templates:
+        - name: "Code Intelligence MCP Server"
+          type: "code-intelligence"
+          description: "AI-powered code analysis, completion, and review automation"
+          runtime: "python"
+          defaultCapabilities:
+            - "code-completion"
+            - "code-review"
+            - "vulnerability-detection"
+            - "refactoring-suggestions"
+          defaultResources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+              
+        - name: "Infrastructure Intelligence MCP Server"
+          type: "infrastructure-intelligence"
+          description: "Resource optimization, cost analysis, and deployment planning"
+          runtime: "nodejs"
+          defaultCapabilities:
+            - "resource-optimization"
+            - "cost-analysis"
+            - "security-compliance"
+            - "deployment-planning"
+          defaultResources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+              
+        - name: "Document Intelligence MCP Server"
+          type: "document-processing"
+          description: "Automated documentation generation and knowledge extraction"
+          runtime: "python"
+          defaultCapabilities:
+            - "documentation-generation"
+            - "api-documentation"
+            - "code-documentation"
+            - "knowledge-extraction"
+          defaultResources:
+            requests:
+              cpu: "500m"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "6Gi"
+      
+      # Model Endpoints Configuration
+      modelEndpoints:
+        - name: "Ollama Local"
+          type: "ollama"
+          endpoint: "http://ollama.ai-services.svc.cluster.local:11434"
+          authMethod: "none"
+          models:
+            - "llama3.1:8b"
+            - "codellama:13b"
+            - "mistral:7b"
+            - "nomic-embed-text"
+          capabilities:
+            - "code-completion"
+            - "code-review"
+            - "documentation-generation"
+            
+        - name: "OpenAI GPT-4"
+          type: "openai"
+          endpoint: "https://api.openai.com/v1"
+          authMethod: "api-key"
+          models:
+            - "gpt-4o"
+            - "gpt-4o-mini"
+            - "gpt-3.5-turbo"
+          capabilities:
+            - "code-completion"
+            - "code-review"
+            - "documentation-generation"
+            - "infrastructure-optimization"
+            
+        - name: "Anthropic Claude"
+          type: "anthropic"
+          endpoint: "https://api.anthropic.com/v1"
+          authMethod: "api-key"
+          models:
+            - "claude-3-5-sonnet-20241022"
+            - "claude-3-haiku-20240307"
+          capabilities:
+            - "code-review"
+            - "documentation-generation"
+            - "security-analysis"
+      
+      # Security Configuration
+      security:
+        authentication:
+          required: true
+          methods: ["jwt", "api-key"]
+        authorization:
+          rbac: true
+          roles:
+            - name: "mcp-admin"
+              permissions: ["create", "read", "update", "delete", "scale"]
+            - name: "mcp-developer"
+              permissions: ["read", "create", "scale"]
+            - name: "mcp-viewer"
+              permissions: ["read"]
+        encryption:
+          enabled: true
+          algorithm: "AES-256-GCM"
+        auditLogging:
+          enabled: true
+          retention: "90d"
+      
+      # Monitoring and Observability
+      monitoring:
+        metrics:
+          enabled: true
+          prometheus:
+            endpoint: "http://prometheus.istio-system.svc.cluster.local:9090"
+            queries:
+              - name: "MCP Server CPU Usage"
+                query: 'rate(container_cpu_usage_seconds_total{namespace="mcp-platform"}[5m])'
+              - name: "MCP Server Memory Usage"
+                query: 'container_memory_working_set_bytes{namespace="mcp-platform"}'
+              - name: "MCP Server Request Rate"
+                query: 'rate(istio_requests_total{destination_namespace="mcp-platform"}[5m])'
+        tracing:
+          enabled: true
+          jaeger:
+            endpoint: "http://jaeger-query.istio-system.svc.cluster.local:16686"
+        logging:
+          enabled: true
+          elasticsearch:
+            endpoint: "http://elasticsearch.logging.svc.cluster.local:9200"
+      
+      # Dashboard Configuration
+      dashboards:
+        - name: "MCP Platform Overview"
+          description: "Overview of all MCP servers and their status"
+          panels:
+            - type: "server-list"
+              title: "MCP Servers"
+              query: "mcpservers"
+            - type: "metrics-chart"
+              title: "Resource Usage"
+              metrics: ["cpu", "memory", "requests"]
+            - type: "health-status"
+              title: "Health Status"
+              healthChecks: ["pods", "services", "endpoints"]
+              
+        - name: "MCP Server Details"
+          description: "Detailed view of individual MCP server"
+          panels:
+            - type: "server-info"
+              title: "Server Information"
+            - type: "logs"
+              title: "Recent Logs"
+              lines: 100
+            - type: "metrics-detail"
+              title: "Detailed Metrics"
+            - type: "model-usage"
+              title: "Model Usage Statistics"
+      
+      # Integration Configuration
+      integrations:
+        backstage:
+          catalog:
+            enabled: true
+            entityKind: "Component"
+            entityType: "mcp-server"
+          techdocs:
+            enabled: true
+            storageUrl: "http://backstage-techdocs.backstage.svc.cluster.local"
+        argocd:
+          enabled: true
+          serverUrl: "http://argocd-server.argocd.svc.cluster.local"
+          applicationPrefix: "mcp-"
+        grafana:
+          enabled: true
+          dashboardUrl: "http://grafana.istio-system.svc.cluster.local:3000"
+          dashboardPath: "/d/mcp-platform/mcp-platform-overview"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-mcp-entity-provider
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: backstage-mcp-entity-provider
+    app.kubernetes.io/component: configuration
+    app.kubernetes.io/part-of: idp-platform
+data:
+  entity-provider.yaml: |
+    catalog:
+      providers:
+        kubernetes:
+          mcp-platform:
+            baseUrl: "https://kubernetes.default.svc"
+            serviceAccountToken: ${KUBERNETES_SERVICE_ACCOUNT_TOKEN}
+            caFile: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+            customResources:
+              - group: "platform.idp"
+                apiVersion: "v1alpha1"
+                plural: "mcpservers"
+                objectType: "custom-resource"
+                entityMapper: |
+                  const mcpServer = entity.spec;
+                  const metadata = entity.metadata;
+                  
+                  return {
+                    apiVersion: 'backstage.io/v1alpha1',
+                    kind: 'Component',
+                    metadata: {
+                      name: metadata.name,
+                      namespace: metadata.namespace,
+                      title: `MCP Server - ${metadata.name}`,
+                      description: `${mcpServer.serverType} MCP server with capabilities: ${mcpServer.capabilities.join(', ')}`,
+                      annotations: {
+                        'backstage.io/kubernetes-id': metadata.name,
+                        'backstage.io/kubernetes-namespace': metadata.namespace,
+                        'platform.idp/mcp-server-type': mcpServer.serverType,
+                        'platform.idp/mcp-runtime': mcpServer.runtime,
+                        'platform.idp/mcp-capabilities': mcpServer.capabilities.join(','),
+                      },
+                      labels: {
+                        'mcp-server-type': mcpServer.serverType,
+                        'mcp-runtime': mcpServer.runtime,
+                        'environment': metadata.labels['platform.idp/environment'] || 'development',
+                      },
+                      tags: [
+                        'mcp-server',
+                        mcpServer.serverType,
+                        mcpServer.runtime,
+                        ...mcpServer.capabilities
+                      ]
+                    },
+                    spec: {
+                      type: 'mcp-server',
+                      lifecycle: 'production',
+                      owner: 'platform-team',
+                      system: 'mcp-platform',
+                      dependsOn: mcpServer.modelEndpoints?.map(endpoint => `resource:model-endpoint-${endpoint.name}`) || [],
+                      providesApis: [`mcp-api-${metadata.name}`]
+                    }
+                  };
+            processors:
+              - name: "mcp-server-processor"
+                filter: |
+                  entity => entity.kind === 'Component' && entity.spec?.type === 'mcp-server'
+                transform: |
+                  entity => {
+                    // Add MCP-specific status information
+                    const mcpStatus = entity.metadata.annotations['backstage.io/kubernetes-status'];
+                    if (mcpStatus) {
+                      entity.status = {
+                        ...entity.status,
+                        mcp: JSON.parse(mcpStatus)
+                      };
+                    }
+                    return entity;
+                  }

@@ -1,0 +1,141 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mcp-platform
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: mcp-platform
+    app.kubernetes.io/component: argocd-application
+    app.kubernetes.io/part-of: idp-platform
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/idp-platform.git
+    targetRevision: HEAD
+    path: applications/platform
+    directory:
+      include: "mcp-*.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mcp-platform
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 10
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ollama-local
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: ollama-local
+    app.kubernetes.io/component: argocd-application
+    app.kubernetes.io/part-of: idp-platform
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://otwld.github.io/ollama-helm
+    targetRevision: 0.54.0
+    chart: ollama
+    helm:
+      releaseName: ollama
+      values: |
+        replicaCount: 1
+        image:
+          repository: ollama/ollama
+          tag: "latest"
+          pullPolicy: IfNotPresent
+
+        service:
+          type: ClusterIP
+          port: 11434
+          targetPort: 11434
+          name: http
+
+        ingress:
+          enabled: false
+
+        resources:
+          requests:
+            cpu: 2
+            memory: 4Gi
+          limits:
+            cpu: 4
+            memory: 8Gi
+
+        persistence:
+          enabled: true
+          size: 50Gi
+          storageClass: ""
+          accessModes:
+            - ReadWriteOnce
+
+        nodeSelector: {}
+        tolerations: []
+        affinity: {}
+
+        podAnnotations:
+          sidecar.istio.io/inject: "true"
+
+        podLabels:
+          app.kubernetes.io/name: ollama
+          app.kubernetes.io/component: ai-model-server
+          app.kubernetes.io/part-of: idp-platform
+
+        env:
+          - name: OLLAMA_MODELS
+            value: "/root/.ollama/models"
+          - name: OLLAMA_HOST
+            value: "0.0.0.0"
+          - name: OLLAMA_ORIGINS
+            value: "*"
+
+        # Pre-load common models
+        postStart:
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Wait for Ollama to start
+              sleep 30
+              # Pull commonly used models
+              ollama pull llama3.1:8b
+              ollama pull codellama:13b
+              ollama pull mistral:7b
+              ollama pull nomic-embed-text
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-services
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 10

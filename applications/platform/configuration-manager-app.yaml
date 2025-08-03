@@ -1,0 +1,415 @@
+# Configuration Manager Backend Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: configuration-manager
+  namespace: backstage
+  labels:
+    app: configuration-manager
+    component: backend-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: configuration-manager
+  template:
+    metadata:
+      labels:
+        app: configuration-manager
+        component: backend-service
+    spec:
+      serviceAccountName: configuration-manager
+      containers:
+      - name: configuration-manager
+        image: configuration-manager:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: GIT_REPO_URL
+          valueFrom:
+            secretKeyRef:
+              name: configuration-manager-secrets
+              key: git-repo-url
+              optional: true
+        - name: LOG_LEVEL
+          value: "INFO"
+        volumeMounts:
+        - name: templates
+          mountPath: /app/templates
+        - name: kubeconfig
+          mountPath: /app/.kube
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: templates
+        configMap:
+          name: configuration-templates
+      - name: kubeconfig
+        secret:
+          secretName: configuration-manager-kubeconfig
+          optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: configuration-manager
+  namespace: backstage
+  labels:
+    app: configuration-manager
+spec:
+  selector:
+    app: configuration-manager
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: configuration-manager
+  namespace: backstage
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: configuration-manager
+rules:
+# ApplicationConfiguration CRD permissions
+- apiGroups: ["platform.idp"]
+  resources: ["applicationconfigurations"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# WebApplication CRD permissions
+- apiGroups: ["platform.idp"]
+  resources: ["webapplications"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Infrastructure CRD permissions
+- apiGroups: ["platform.idp"]
+  resources: ["databaseinstances", "cacheinstances"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Core Kubernetes resources
+- apiGroups: [""]
+  resources: ["configmaps", "secrets", "services"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+# Monitoring
+- apiGroups: ["monitoring.coreos.com"]
+  resources: ["servicemonitors", "prometheusrules"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: configuration-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: configuration-manager
+subjects:
+- kind: ServiceAccount
+  name: configuration-manager
+  namespace: backstage
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: configuration-templates
+  namespace: backstage
+data:
+  web-application.yaml: |
+    name: "web-application"
+    description: "Standard web application with load balancer and auto-scaling"
+    type: "web-app"
+    configuration:
+      spec:
+        environments:
+          development:
+            replicas: 1
+            resources:
+              requests:
+                cpu: "100m"
+                memory: "128Mi"
+              limits:
+                cpu: "500m"
+                memory: "512Mi"
+            environment:
+              NODE_ENV: "development"
+              LOG_LEVEL: "debug"
+            ingress:
+              enabled: true
+              host: "app-dev.idp.local"
+              tls: false
+          staging:
+            replicas: 2
+            resources:
+              requests:
+                cpu: "200m"
+                memory: "256Mi"
+              limits:
+                cpu: "500m"
+                memory: "512Mi"
+            environment:
+              NODE_ENV: "staging"
+              LOG_LEVEL: "info"
+            ingress:
+              enabled: true
+              host: "app-staging.idp.local"
+              tls: true
+            scaling:
+              enabled: true
+              minReplicas: 2
+              maxReplicas: 5
+              targetCPUUtilization: 70
+          production:
+            replicas: 3
+            resources:
+              requests:
+                cpu: "500m"
+                memory: "512Mi"
+              limits:
+                cpu: "1000m"
+                memory: "1Gi"
+            environment:
+              NODE_ENV: "production"
+              LOG_LEVEL: "warn"
+            ingress:
+              enabled: true
+              host: "app.company.com"
+              tls: true
+            scaling:
+              enabled: true
+              minReplicas: 3
+              maxReplicas: 10
+              targetCPUUtilization: 60
+
+  api-service.yaml: |
+    name: "api-service"
+    description: "REST API service with database and cache"
+    type: "api-service"
+    configuration:
+      spec:
+        environments:
+          development:
+            replicas: 1
+            resources:
+              requests:
+                cpu: "200m"
+                memory: "256Mi"
+              limits:
+                cpu: "500m"
+                memory: "512Mi"
+            environment:
+              NODE_ENV: "development"
+              API_PORT: "8000"
+            database:
+              type: "postgresql"
+              size: "small"
+              storage: "10Gi"
+            cache:
+              type: "redis"
+              size: "small"
+              nodes: 1
+          production:
+            replicas: 3
+            resources:
+              requests:
+                cpu: "500m"
+                memory: "512Mi"
+              limits:
+                cpu: "1000m"
+                memory: "1Gi"
+            environment:
+              NODE_ENV: "production"
+              API_PORT: "8000"
+            database:
+              type: "postgresql"
+              size: "large"
+              storage: "100Gi"
+            cache:
+              type: "redis"
+              size: "large"
+              nodes: 3
+            scaling:
+              enabled: true
+              minReplicas: 3
+              maxReplicas: 10
+              targetCPUUtilization: 60
+
+  worker-service.yaml: |
+    name: "worker-service"
+    description: "Background worker service with queue"
+    type: "worker"
+    configuration:
+      spec:
+        environments:
+          development:
+            replicas: 1
+            resources:
+              requests:
+                cpu: "100m"
+                memory: "128Mi"
+              limits:
+                cpu: "500m"
+                memory: "512Mi"
+            environment:
+              WORKER_CONCURRENCY: "2"
+              QUEUE_URL: "redis://redis:6379"
+            cache:
+              type: "redis"
+              size: "small"
+              nodes: 1
+          production:
+            replicas: 5
+            resources:
+              requests:
+                cpu: "500m"
+                memory: "512Mi"
+              limits:
+                cpu: "1000m"
+                memory: "1Gi"
+            environment:
+              WORKER_CONCURRENCY: "4"
+              QUEUE_URL: "redis://redis-cluster:6379"
+            cache:
+              type: "redis"
+              size: "large"
+              nodes: 3
+            scaling:
+              enabled: true
+              minReplicas: 3
+              maxReplicas: 15
+              targetCPUUtilization: 70
+
+  microservice.yaml: |
+    name: "microservice"
+    description: "Microservice with full observability stack"
+    type: "api-service"
+    configuration:
+      spec:
+        global:
+          monitoring:
+            enabled: true
+            alerts: true
+          security:
+            networkPolicies: true
+            podSecurityPolicy: "restricted"
+          backup:
+            enabled: true
+            schedule: "0 2 * * *"
+            retention: "30d"
+        environments:
+          development:
+            replicas: 1
+            resources:
+              requests:
+                cpu: "100m"
+                memory: "128Mi"
+              limits:
+                cpu: "300m"
+                memory: "256Mi"
+            environment:
+              SERVICE_NAME: "microservice"
+              LOG_LEVEL: "debug"
+          staging:
+            replicas: 2
+            resources:
+              requests:
+                cpu: "200m"
+                memory: "256Mi"
+              limits:
+                cpu: "500m"
+                memory: "512Mi"
+            environment:
+              SERVICE_NAME: "microservice"
+              LOG_LEVEL: "info"
+            scaling:
+              enabled: true
+              minReplicas: 2
+              maxReplicas: 4
+              targetCPUUtilization: 70
+          production:
+            replicas: 3
+            resources:
+              requests:
+                cpu: "300m"
+                memory: "512Mi"
+              limits:
+                cpu: "800m"
+                memory: "1Gi"
+            environment:
+              SERVICE_NAME: "microservice"
+              LOG_LEVEL: "warn"
+            scaling:
+              enabled: true
+              minReplicas: 3
+              maxReplicas: 8
+              targetCPUUtilization: 60
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: configuration-manager-secrets
+  namespace: backstage
+type: Opaque
+stringData:
+  git-repo-url: "https://github.com/your-org/idp-configurations.git"
+  git-username: "platform-bot"
+  git-token: "your-git-token"
+---
+# Service Monitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: configuration-manager
+  namespace: backstage
+  labels:
+    app: configuration-manager
+spec:
+  selector:
+    matchLabels:
+      app: configuration-manager
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+---
+# Virtual Service for Istio
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: configuration-manager
+  namespace: backstage
+spec:
+  hosts:
+  - configuration-manager.backstage.svc.cluster.local
+  http:
+  - match:
+    - uri:
+        prefix: "/"
+    route:
+    - destination:
+        host: configuration-manager.backstage.svc.cluster.local
+        port:
+          number: 8000

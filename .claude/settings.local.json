@@ -12,7 +12,9 @@
       "Bash(echo)",
       "Bash(find:*)",
       "Bash(mkdir:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(grep:*)",
+      "Bash(awslocal cognito-idp describe-user-pool:*)"
     ],
     "deny": []
   }

@@ -1,0 +1,231 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mcp-platform
+  labels:
+    name: mcp-platform
+    istio-injection: enabled
+    app.kubernetes.io/name: mcp-platform
+    app.kubernetes.io/component: ai-services
+    app.kubernetes.io/part-of: idp-platform
+    platform.idp/type: ai-platform
+    platform.idp/environment: development
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-server
+  namespace: mcp-platform
+  labels:
+    app.kubernetes.io/name: mcp-server
+    app.kubernetes.io/component: service-account
+    app.kubernetes.io/part-of: idp-platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mcp-server
+  labels:
+    app.kubernetes.io/name: mcp-server
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/part-of: idp-platform
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["platform.idp"]
+    resources: ["webapplications", "mcpservers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflows", "workflowtemplates"]
+    verbs: ["get", "list", "watch", "create"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mcp-server
+  labels:
+    app.kubernetes.io/name: mcp-server
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/part-of: idp-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mcp-server
+subjects:
+  - kind: ServiceAccount
+    name: mcp-server
+    namespace: mcp-platform
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-platform-config
+  namespace: mcp-platform
+  labels:
+    app.kubernetes.io/name: mcp-platform-config
+    app.kubernetes.io/component: configuration
+    app.kubernetes.io/part-of: idp-platform
+data:
+  platform-config.yaml: |
+    platform:
+      name: "IDP MCP Platform"
+      version: "v1.0.0"
+      environment: "development"
+
+    security:
+      authentication:
+        enabled: true
+        methods: ["jwt", "api-key"]
+      authorization:
+        enabled: true
+        rbac: true
+      encryption:
+        enabled: true
+        algorithm: "AES-256-GCM"
+      auditLogging:
+        enabled: true
+        retention: "90d"
+
+    monitoring:
+      metrics:
+        enabled: true
+        endpoint: "/metrics"
+        port: 8081
+      tracing:
+        enabled: true
+        jaeger:
+          endpoint: "http://jaeger-collector.istio-system.svc.cluster.local:14268/api/traces"
+      logging:
+        level: "info"
+        format: "json"
+
+    ai:
+      defaultModel: "ollama-local"
+      contextWindow: 128000
+      maxTokens: 4096
+      temperature: 0.7
+      caching:
+        enabled: true
+        ttl: "1h"
+      rateLimiting:
+        enabled: true
+        requestsPerMinute: 60
+        burstSize: 10
+
+    networking:
+      cors:
+        enabled: true
+        allowedOrigins: ["*"]
+      ssl:
+        enabled: true
+        redirectHttps: true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mcp-model-credentials
+  namespace: mcp-platform
+  labels:
+    app.kubernetes.io/name: mcp-model-credentials
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/part-of: idp-platform
+type: Opaque
+stringData:
+  openai-api-key: ""
+  anthropic-api-key: ""
+  azure-api-key: ""
+  google-api-key: ""
+  endpoints: |
+    {
+      "openai": {
+        "endpoint": "https://api.openai.com/v1",
+        "models": ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
+      },
+      "anthropic": {
+        "endpoint": "https://api.anthropic.com/v1",
+        "models": ["claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"]
+      },
+      "ollama": {
+        "endpoint": "http://ollama.ai-services.svc.cluster.local:11434",
+        "models": ["llama3.1:8b", "codellama:13b", "mistral:7b"]
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-platform-service
+  namespace: mcp-platform
+  labels:
+    app.kubernetes.io/name: mcp-platform-service
+    app.kubernetes.io/component: service
+    app.kubernetes.io/part-of: idp-platform
+spec:
+  selector:
+    app: mcp-server
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8080
+    - name: metrics
+      protocol: TCP
+      port: 8081
+      targetPort: 8081
+  type: ClusterIP
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: mcp-platform
+  namespace: mcp-platform
+  labels:
+    app.kubernetes.io/name: mcp-platform
+    app.kubernetes.io/component: ingress
+    app.kubernetes.io/part-of: idp-platform
+spec:
+  hosts:
+    - mcp.development.idp.local
+  gateways:
+    - istio-system/main-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: mcp-platform-service.mcp-platform.svc.cluster.local
+            port:
+              number: 80
+      timeout: 300s
+      retries:
+        attempts: 3
+        perTryTimeout: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mcp-platform-metrics
+  namespace: mcp-platform
+  labels:
+    app.kubernetes.io/name: mcp-platform-metrics
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: idp-platform
+spec:
+  selector:
+    matchLabels:
+      app: mcp-server
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+  namespaceSelector:
+    matchNames:
+      - mcp-platform

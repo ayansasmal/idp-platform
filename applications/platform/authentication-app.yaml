@@ -1,0 +1,91 @@
+# ArgoCD Application for Authentication Infrastructure
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authentication-platform
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: authentication
+    app.kubernetes.io/part-of: idp-platform
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/idp-platform.git
+    targetRevision: HEAD
+    path: infrastructure/authentication
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: authentication
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 10
+---
+# ArgoCD AppProject for Authentication
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: authentication-project
+  namespace: argocd
+spec:
+  description: Authentication and authorization platform components
+  sourceRepos:
+  - 'https://github.com/your-org/idp-platform.git'
+  destinations:
+  - namespace: authentication
+    server: https://kubernetes.default.svc
+  - namespace: backstage
+    server: https://kubernetes.default.svc
+  - namespace: istio-system
+    server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+  - group: ''
+    kind: Namespace
+  - group: security.istio.io
+    kind: RequestAuthentication
+  - group: security.istio.io
+    kind: AuthorizationPolicy
+  - group: networking.istio.io
+    kind: Gateway
+  - group: networking.istio.io
+    kind: VirtualService
+  namespaceResourceWhitelist:
+  - group: ''
+    kind: Secret
+  - group: ''
+    kind: ConfigMap
+  - group: ''
+    kind: Service
+  - group: apps
+    kind: Deployment
+  - group: ''
+    kind: ServiceAccount
+  roles:
+  - name: admin
+    description: Admin access to authentication project
+    policies:
+    - p, proj:authentication-project:admin, applications, *, authentication-project/*, allow
+    - p, proj:authentication-project:admin, repositories, *, *, allow
+    groups:
+    - idp-platform:admin
+  - name: developer
+    description: Developer access to authentication project
+    policies:
+    - p, proj:authentication-project:developer, applications, get, authentication-project/*, allow
+    - p, proj:authentication-project:developer, applications, sync, authentication-project/*, allow
+    groups:
+    - idp-platform:developer
