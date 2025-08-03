@@ -8,12 +8,12 @@ metadata:
 data:
   oidc.config: |
     name: AWS Cognito
-    issuer: http://localstack:4566/{{USER_POOL_ID}}
+    issuer: http://localstack-external:4566/{{USER_POOL_ID}}
     clientId: {{ARGOCD_CLIENT_ID}}
     clientSecret: {{ARGOCD_CLIENT_SECRET}}
     requestedScopes: ["openid", "email", "profile"]
     requestedIDTokenClaims: {"groups": {"essential": true}}
-    logoutURL: http://localhost:4566/idp-platform-auth/logout
+    logoutURL: http://localstack-external:4566/idp-platform-auth/logout
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -66,12 +66,12 @@ data:
   # Enable OIDC
   server.oidc.config: |
     name: AWS Cognito
-    issuer: http://localstack:4566/{{USER_POOL_ID}}
+    issuer: http://localstack-external:4566/{{USER_POOL_ID}}
     clientId: {{ARGOCD_CLIENT_ID}}
     clientSecret: {{ARGOCD_CLIENT_SECRET}}
     requestedScopes: ["openid", "email", "profile"]
     requestedIDTokenClaims: {"groups": {"essential": true}}
-    logoutURL: http://localhost:4566/idp-platform-auth/logout
+    logoutURL: http://localstack-external:4566/idp-platform-auth/logout
 ---
 apiVersion: batch/v1
 kind: Job
