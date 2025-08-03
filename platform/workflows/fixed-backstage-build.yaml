@@ -1,0 +1,82 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: fixed-backstage-build
+  namespace: argo-workflows
+spec:
+  entrypoint: build-backstage
+  serviceAccountName: argo-workflows-workflow-controller
+  arguments:
+    parameters:
+    - name: repo-url
+      value: "https://github.com/ayansasmal/idp-platform"
+    - name: branch
+      value: "main"
+    - name: image-name
+      value: "backstage-app-real"
+    - name: image-tag
+      value: "latest"
+  
+  templates:
+  - name: build-backstage
+    dag:
+      tasks:
+      - name: clone-repo
+        template: git-clone
+      - name: build-image
+        template: build-and-push
+        dependencies: [clone-repo]
+
+  - name: git-clone
+    container:
+      image: alpine/git:latest
+      command: [sh, -c]
+      args:
+        - |
+          echo "Cloning repository {{workflow.parameters.repo-url}}"
+          git clone {{workflow.parameters.repo-url}} /workspace
+          cd /workspace
+          git checkout {{workflow.parameters.branch}}
+          echo "Repository cloned successfully"
+          echo "Listing backstage-app-real directory:"
+          ls -la /workspace/backstage-app-real/backstage/
+          echo "Checking Dockerfile.prebuilt:"
+          ls -la /workspace/backstage-app-real/backstage/Dockerfile.prebuilt
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+    volumes:
+    - name: workspace
+      emptyDir: {}
+
+  - name: build-and-push
+    container:
+      image: gcr.io/kaniko-project/executor:debug
+      command: ["/kaniko/executor"]
+      args:
+        - "--dockerfile=/workspace/backstage-app-real/backstage/Dockerfile.prebuilt"
+        - "--context=/workspace/backstage-app-real/backstage"
+        - "--destination=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:{{workflow.parameters.image-tag}}"
+        - "--destination=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:build-{{workflow.uid}}"
+        - "--insecure"
+        - "--skip-tls-verify"
+        - "--insecure-registry=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566"
+        - "--cache=false"
+        - "--force"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+      env:
+      - name: AWS_ACCESS_KEY_ID
+        value: "test"
+      - name: AWS_SECRET_ACCESS_KEY
+        value: "test"
+      - name: AWS_DEFAULT_REGION
+        value: "us-east-1"
+    volumes:
+    - name: workspace
+      emptyDir: {}
+
+  volumes:
+  - name: workspace
+    emptyDir: {}

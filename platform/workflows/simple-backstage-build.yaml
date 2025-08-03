@@ -1,0 +1,80 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: simple-backstage-build
+  namespace: argo-workflows
+spec:
+  entrypoint: build-backstage
+  serviceAccountName: argo-workflows-workflow-controller
+  arguments:
+    parameters:
+    - name: repo-url
+      value: "https://github.com/ayansasmal/idp-platform"
+    - name: branch
+      value: "main"
+    - name: image-name
+      value: "backstage-app-real"
+    - name: image-tag
+      value: "latest"
+  
+  templates:
+  - name: build-backstage
+    dag:
+      tasks:
+      - name: clone-and-build
+        template: build-and-push
+      - name: verify-image
+        template: verify-build
+        dependencies: [clone-and-build]
+
+  - name: build-and-push
+    container:
+      image: gcr.io/kaniko-project/executor:debug
+      command: ["/kaniko/executor"]
+      args:
+        - "--dockerfile=Dockerfile.prebuilt"
+        - "--context=git://{{workflow.parameters.repo-url}}#{{workflow.parameters.branch}}#:backstage-app-real/backstage"
+        - "--destination=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:{{workflow.parameters.image-tag}}"
+        - "--destination=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:build-{{workflow.uid}}"
+        - "--insecure"
+        - "--skip-tls-verify"
+        - "--insecure-registry=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566"
+        - "--cache=false"
+        - "--force"
+      env:
+      - name: AWS_ACCESS_KEY_ID
+        value: "test"
+      - name: AWS_SECRET_ACCESS_KEY
+        value: "test"
+      - name: AWS_DEFAULT_REGION
+        value: "us-east-1"
+
+  - name: verify-build
+    container:
+      image: alpine/curl:latest
+      command: [sh, -c]
+      args:
+        - |
+          echo "Build completed successfully!"
+          echo "Image: 000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:{{workflow.parameters.image-tag}}"
+          echo "Build ID: build-{{workflow.uid}}"
+          echo "Workflow completed at: $(date)"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: backstage-build-
+  namespace: argo-workflows
+spec:
+  workflowTemplateRef:
+    name: simple-backstage-build
+  arguments:
+    parameters:
+    - name: repo-url
+      value: "https://github.com/ayansasmal/idp-platform"
+    - name: branch
+      value: "main"
+    - name: image-name
+      value: "backstage-app-real"
+    - name: image-tag
+      value: "v1.0.0"

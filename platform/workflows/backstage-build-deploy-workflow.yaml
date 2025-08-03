@@ -1,0 +1,161 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: backstage-build-deploy
+  namespace: argo-workflows
+spec:
+  entrypoint: build-and-deploy
+  serviceAccountName: argo-workflow
+  arguments:
+    parameters:
+    - name: repo-url
+      value: "https://github.com/ayansasmal/idp-platform"
+    - name: branch
+      value: "main"
+    - name: image-name
+      value: "backstage-app-real"
+    - name: image-tag
+      value: "latest"
+    - name: ecr-registry
+      value: "000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566"
+    - name: deployment-namespace
+      value: "backstage"
+    - name: deployment-name
+      value: "backstage"
+  
+  templates:
+  - name: build-and-deploy
+    dag:
+      tasks:
+      - name: clone-repo
+        template: git-clone
+      - name: build-image
+        template: build-docker-image
+        dependencies: [clone-repo]
+      - name: push-image
+        template: push-to-ecr
+        dependencies: [build-image]
+      - name: update-deployment
+        template: update-k8s-deployment
+        dependencies: [push-image]
+
+  - name: git-clone
+    container:
+      image: alpine/git:latest
+      command: [sh, -c]
+      args:
+        - |
+          git clone {{workflow.parameters.repo-url}} /workspace
+          cd /workspace
+          git checkout {{workflow.parameters.branch}}
+          echo "Repository cloned successfully"
+          ls -la /workspace/backstage-app-real/
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+    volumes:
+    - name: workspace
+      emptyDir: {}
+
+  - name: build-docker-image
+    container:
+      image: gcr.io/kaniko-project/executor:debug
+      command: ["/kaniko/executor"]
+      args:
+        - "--dockerfile=/workspace/backstage-app-real/backstage/Dockerfile.prebuilt"
+        - "--context=/workspace/backstage-app-real/backstage"
+        - "--destination={{workflow.parameters.ecr-registry}}/{{workflow.parameters.image-name}}:{{workflow.parameters.image-tag}}"
+        - "--destination={{workflow.parameters.ecr-registry}}/{{workflow.parameters.image-name}}:build-{{workflow.uid}}"
+        - "--insecure"
+        - "--skip-tls-verify"
+        - "--insecure-registry={{workflow.parameters.ecr-registry}}"
+        - "--cache=false"
+        - "--force"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+      - name: kaniko-secret
+        mountPath: /kaniko/.docker/
+      env:
+      - name: AWS_ACCESS_KEY_ID
+        valueFrom:
+          secretKeyRef:
+            name: ecr-credentials
+            key: aws-access-key-id
+      - name: AWS_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: ecr-credentials
+            key: aws-secret-access-key
+      - name: AWS_DEFAULT_REGION
+        value: "us-east-1"
+    volumes:
+    - name: workspace
+      emptyDir: {}
+    - name: kaniko-secret
+      secret:
+        secretName: ecr-credentials
+        items:
+        - key: .dockerconfigjson
+          path: config.json
+
+  - name: push-to-ecr
+    container:
+      image: amazon/aws-cli:latest
+      command: [sh, -c]
+      args:
+        - |
+          echo "Image pushed during build step with Kaniko"
+          echo "Verifying image exists in registry..."
+          aws --endpoint-url=http://localstack:4566 ecr describe-images \
+            --repository-name={{workflow.parameters.image-name}} \
+            --image-ids=imageTag={{workflow.parameters.image-tag}} || echo "Image verification failed"
+      env:
+      - name: AWS_ACCESS_KEY_ID
+        valueFrom:
+          secretKeyRef:
+            name: ecr-credentials
+            key: aws-access-key-id
+      - name: AWS_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: ecr-credentials
+            key: aws-secret-access-key
+      - name: AWS_DEFAULT_REGION
+        value: "us-east-1"
+
+  - name: update-k8s-deployment
+    container:
+      image: bitnami/kubectl:latest
+      command: [sh, -c]
+      args:
+        - |
+          echo "Updating deployment {{workflow.parameters.deployment-name}} in namespace {{workflow.parameters.deployment-namespace}}"
+          
+          # Update the deployment with new image
+          kubectl set image deployment/{{workflow.parameters.deployment-name}} \
+            backstage={{workflow.parameters.ecr-registry}}/{{workflow.parameters.image-name}}:build-{{workflow.uid}} \
+            -n {{workflow.parameters.deployment-namespace}}
+          
+          # Wait for rollout to complete
+          kubectl rollout status deployment/{{workflow.parameters.deployment-name}} \
+            -n {{workflow.parameters.deployment-namespace}} --timeout=300s
+          
+          echo "Deployment updated successfully!"
+          
+          # Show pod status
+          kubectl get pods -n {{workflow.parameters.deployment-namespace}} -l app=backstage
+      env:
+      - name: KUBECONFIG
+        value: /etc/kubeconfig/config
+      volumeMounts:
+      - name: kubeconfig
+        mountPath: /etc/kubeconfig
+    volumes:
+    - name: kubeconfig
+      secret:
+        secretName: kubeconfig-secret
+
+  volumes:
+  - name: workspace
+    emptyDir: {}

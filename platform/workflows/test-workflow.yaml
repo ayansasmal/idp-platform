@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: test-backstage-build
+  namespace: argo-workflows
+spec:
+  entrypoint: hello-world
+  serviceAccountName: argo-workflows-workflow-controller
+  templates:
+  - name: hello-world
+    container:
+      image: alpine:latest
+      command: [sh, -c]
+      args: ["echo 'Hello from Argo Workflows! Ready to build Backstage app.'"]

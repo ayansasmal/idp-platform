@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: backstage-build-v2
+  namespace: argo-workflows
+spec:
+  workflowTemplateRef:
+    name: fixed-backstage-build
+  arguments:
+    parameters:
+    - name: repo-url
+      value: "https://github.com/ayansasmal/idp-platform"
+    - name: branch
+      value: "main"
+    - name: image-name
+      value: "backstage-app-real"
+    - name: image-tag
+      value: "v2.0.0"
