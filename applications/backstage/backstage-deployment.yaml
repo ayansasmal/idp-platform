@@ -134,6 +134,32 @@ spec:
                 secretKeyRef:
                   name: backstage-secrets
                   key: postgres-password
+            # AWS Cognito Environment Variables
+            - name: COGNITO_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-cognito
+                  key: client-id
+            - name: COGNITO_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-cognito
+                  key: client-secret
+            - name: COGNITO_USER_POOL_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cognito-config
+                  key: user-pool-id
+            - name: COGNITO_AUTH_URL
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-cognito
+                  key: auth-url
+            - name: COGNITO_TOKEN_URL
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-cognito
+                  key: token-url
           resources:
             requests:
               cpu: 250m

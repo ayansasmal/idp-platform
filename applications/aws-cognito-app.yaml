@@ -1,0 +1,103 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aws-cognito
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: aws-cognito
+    app.kubernetes.io/part-of: idp-platform
+spec:
+  project: idp-platform
+  source:
+    repoURL: https://github.com/your-org/idp-platform.git
+    targetRevision: HEAD
+    path: infrastructure/aws
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  ignoreDifferences:
+  - group: batch
+    kind: Job
+    managedFieldsManagers:
+    - kubectl-create
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-jwt-auth
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: istio-jwt-auth
+    app.kubernetes.io/part-of: idp-platform
+spec:
+  project: idp-platform
+  source:
+    repoURL: https://github.com/your-org/idp-platform.git
+    targetRevision: HEAD
+    path: infrastructure/istio
+    directory:
+      include: jwt-policy.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-cognito-integration
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cognito-integration
+    app.kubernetes.io/part-of: idp-platform
+spec:
+  project: idp-platform
+  source:
+    repoURL: https://github.com/your-org/idp-platform.git
+    targetRevision: HEAD
+    path: applications/argocd
+    directory:
+      include: argocd-cognito-config.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  ignoreDifferences:
+  - group: batch
+    kind: Job
+    managedFieldsManagers:
+    - kubectl-create

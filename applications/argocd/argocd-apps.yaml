@@ -11,6 +11,32 @@ spec:
     path: applications
     repoURL: https://github.com/ayansasmal/idp-platform
     targetRevision: HEAD
+    directory:
+      exclude: "aws-cognito-app.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aws-cognito-auth
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: idp-platform
+  source:
+    path: applications
+    repoURL: https://github.com/ayansasmal/idp-platform
+    targetRevision: HEAD
+    directory:
+      include: "aws-cognito-app.yaml"
   destination:
     server: https://kubernetes.default.svc
   syncPolicy:

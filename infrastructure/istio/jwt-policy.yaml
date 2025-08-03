@@ -1,0 +1,136 @@
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: cognito-jwt-auth
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      app: istio-proxy
+  jwtRules:
+  - issuer: "http://localhost:4566/us-east-1_83e3f56175ff49d39e8efeb47fb76249"
+    jwksUri: "http://localhost:4566/us-east-1_83e3f56175ff49d39e8efeb47fb76249/.well-known/jwks.json"
+    audiences:
+    - "jzab980i8mrdqol6o3mnxaytiu"
+    - "095vvzd65qmoxjr2kr7hqs29o9"
+    fromHeaders:
+    - name: Authorization
+      prefix: "Bearer "
+    fromCookies:
+    - "idp-auth-token"
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: cognito-authz-policy
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      app: istio-proxy
+  rules:
+  - from:
+    - source:
+        requestPrincipals: ["*"]
+    to:
+    - operation:
+        paths: ["/api/*", "/auth/*"]
+  - to:
+    - operation:
+        paths: ["/health", "/metrics", "/.well-known/*"]
+  - from:
+    - source:
+        notRequestPrincipals: ["*"]
+    to:
+    - operation:
+        paths: ["/", "/static/*", "/login"]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jwt-policy-template
+  namespace: istio-system
+  labels:
+    app.kubernetes.io/name: jwt-policy
+data:
+  update-jwt-policy.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    echo "🔑 Updating Istio JWT policies with Cognito configuration..."
+    
+    # Get Cognito configuration from secrets
+    USER_POOL_ID=$(kubectl get secret cognito-config -o jsonpath='{.data.user-pool-id}' | base64 -d)
+    BACKSTAGE_CLIENT_ID=$(kubectl get secret backstage-cognito -o jsonpath='{.data.client-id}' | base64 -d)
+    ARGOCD_CLIENT_ID=$(kubectl get secret argocd-cognito -o jsonpath='{.data.client-id}' | base64 -d)
+    
+    echo "📝 Configuration:"
+    echo "├── User Pool ID: $USER_POOL_ID"
+    echo "├── Backstage Client: $BACKSTAGE_CLIENT_ID"
+    echo "└── ArgoCD Client: $ARGOCD_CLIENT_ID"
+    
+    # Update JWT policy with actual values
+    kubectl get requestauthentication cognito-jwt-auth -n istio-system -o yaml | \
+      sed "s/{{USER_POOL_ID}}/$USER_POOL_ID/g" | \
+      sed "s/{{BACKSTAGE_CLIENT_ID}}/$BACKSTAGE_CLIENT_ID/g" | \
+      sed "s/{{ARGOCD_CLIENT_ID}}/$ARGOCD_CLIENT_ID/g" | \
+      kubectl apply -f -
+    
+    echo "✅ Istio JWT policies updated successfully!"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: jwt-policy-update
+  namespace: istio-system
+  labels:
+    app.kubernetes.io/name: jwt-policy-update
+spec:
+  template:
+    spec:
+      serviceAccountName: jwt-policy-updater
+      restartPolicy: OnFailure
+      containers:
+      - name: updater
+        image: bitnami/kubectl:latest
+        command: ["/bin/bash"]
+        args: ["/scripts/update-jwt-policy.sh"]
+        volumeMounts:
+        - name: update-script
+          mountPath: /scripts
+      volumes:
+      - name: update-script
+        configMap:
+          name: jwt-policy-template
+          defaultMode: 0755
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jwt-policy-updater
+  namespace: istio-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: jwt-policy-updater
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+- apiGroups: ["security.istio.io"]
+  resources: ["requestauthentications", "authorizationpolicies"]
+  verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: jwt-policy-updater
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jwt-policy-updater
+subjects:
+- kind: ServiceAccount
+  name: jwt-policy-updater
+  namespace: istio-system

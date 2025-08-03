@@ -1,0 +1,216 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cognito-config
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cognito
+data:
+  oidc.config: |
+    name: AWS Cognito
+    issuer: http://localstack:4566/{{USER_POOL_ID}}
+    clientId: {{ARGOCD_CLIENT_ID}}
+    clientSecret: {{ARGOCD_CLIENT_SECRET}}
+    requestedScopes: ["openid", "email", "profile"]
+    requestedIDTokenClaims: {"groups": {"essential": true}}
+    logoutURL: http://localhost:4566/idp-platform-auth/logout
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-server
+    app.kubernetes.io/part-of: argocd
+data:
+  policy.default: role:readonly
+  policy.csv: |
+    # Admin users
+    p, role:admin, applications, *, */*, allow
+    p, role:admin, clusters, *, *, allow
+    p, role:admin, repositories, *, *, allow
+    p, role:admin, certificates, *, *, allow
+    p, role:admin, accounts, *, *, allow
+    p, role:admin, gpgkeys, *, *, allow
+    p, role:admin, logs, *, *, allow
+    p, role:admin, exec, *, *, allow
+    
+    # Developer users
+    p, role:developer, applications, get, */*, allow
+    p, role:developer, applications, sync, */*, allow
+    p, role:developer, applications, action/*, */*, allow
+    p, role:developer, logs, get, */*, allow
+    p, role:developer, repositories, get, *, allow
+    p, role:developer, clusters, get, *, allow
+    
+    # Readonly users
+    p, role:readonly, applications, get, */*, allow
+    p, role:readonly, logs, get, */*, allow
+    p, role:readonly, repositories, get, *, allow
+    p, role:readonly, clusters, get, *, allow
+    
+    # Group mappings based on Cognito custom:role attribute
+    g, admin@idp.local, role:admin
+    g, developer@idp.local, role:developer
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cmd-params-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cmd-params-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # Enable OIDC
+  server.oidc.config: |
+    name: AWS Cognito
+    issuer: http://localstack:4566/{{USER_POOL_ID}}
+    clientId: {{ARGOCD_CLIENT_ID}}
+    clientSecret: {{ARGOCD_CLIENT_SECRET}}
+    requestedScopes: ["openid", "email", "profile"]
+    requestedIDTokenClaims: {"groups": {"essential": true}}
+    logoutURL: http://localhost:4566/idp-platform-auth/logout
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: argocd-cognito-setup
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cognito-setup
+spec:
+  template:
+    spec:
+      serviceAccountName: argocd-cognito-setup
+      restartPolicy: OnFailure
+      containers:
+      - name: setup
+        image: bitnami/kubectl:latest
+        command: ["/bin/bash"]
+        args: ["/scripts/setup-argocd-cognito.sh"]
+        volumeMounts:
+        - name: setup-script
+          mountPath: /scripts
+      volumes:
+      - name: setup-script
+        configMap:
+          name: argocd-cognito-setup-script
+          defaultMode: 0755
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cognito-setup-script
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cognito-setup
+data:
+  setup-argocd-cognito.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    echo "🎯 Setting up ArgoCD OIDC with AWS Cognito..."
+    
+    # Wait for Cognito secrets to be available
+    until kubectl get secret cognito-config -o jsonpath='{.data.user-pool-id}' >/dev/null 2>&1; do
+      echo "⏳ Waiting for Cognito configuration..."
+      sleep 5
+    done
+    
+    # Get Cognito configuration
+    USER_POOL_ID=$(kubectl get secret cognito-config -o jsonpath='{.data.user-pool-id}' | base64 -d)
+    ARGOCD_CLIENT_ID=$(kubectl get secret argocd-cognito -o jsonpath='{.data.client-id}' | base64 -d)
+    ARGOCD_CLIENT_SECRET=$(kubectl get secret argocd-cognito -o jsonpath='{.data.client-secret}' | base64 -d)
+    
+    echo "📝 ArgoCD OIDC Configuration:"
+    echo "├── User Pool ID: $USER_POOL_ID"
+    echo "├── Client ID: $ARGOCD_CLIENT_ID"
+    echo "└── Issuer: http://localstack:4566/$USER_POOL_ID"
+    
+    # Update ArgoCD configuration with actual values
+    echo "🔧 Updating ArgoCD OIDC configuration..."
+    
+    # Update OIDC config
+    kubectl get configmap argocd-cognito-config -n argocd -o yaml | \
+      sed "s/{{USER_POOL_ID}}/$USER_POOL_ID/g" | \
+      sed "s/{{ARGOCD_CLIENT_ID}}/$ARGOCD_CLIENT_ID/g" | \
+      sed "s/{{ARGOCD_CLIENT_SECRET}}/$ARGOCD_CLIENT_SECRET/g" | \
+      kubectl apply -f -
+    
+    # Update cmd params
+    kubectl get configmap argocd-cmd-params-cm -n argocd -o yaml | \
+      sed "s/{{USER_POOL_ID}}/$USER_POOL_ID/g" | \
+      sed "s/{{ARGOCD_CLIENT_ID}}/$ARGOCD_CLIENT_ID/g" | \
+      sed "s/{{ARGOCD_CLIENT_SECRET}}/$ARGOCD_CLIENT_SECRET/g" | \
+      kubectl apply -f -
+    
+    # Patch ArgoCD server deployment to use OIDC
+    echo "🔄 Restarting ArgoCD server to apply OIDC configuration..."
+    kubectl patch deployment argocd-server -n argocd -p '{"spec":{"template":{"metadata":{"annotations":{"configmap.reloader.stakater.com/reload":"argocd-cognito-config,argocd-cmd-params-cm,argocd-rbac-cm"}}}}}'
+    
+    # Add OIDC environment variables to ArgoCD server
+    kubectl patch deployment argocd-server -n argocd --type='merge' -p='{
+      "spec": {
+        "template": {
+          "spec": {
+            "containers": [{
+              "name": "argocd-server",
+              "env": [
+                {
+                  "name": "ARGOCD_SERVER_OIDC_CONFIG",
+                  "valueFrom": {
+                    "configMapKeyRef": {
+                      "name": "argocd-cognito-config",
+                      "key": "oidc.config"
+                    }
+                  }
+                }
+              ]
+            }]
+          }
+        }
+      }
+    }'
+    
+    echo "✅ ArgoCD OIDC configuration completed!"
+    echo ""
+    echo "🔗 ArgoCD Access:"
+    echo "├── URL: http://localhost:8080"
+    echo "├── Login: Click 'LOG IN VIA AWS COGNITO'"
+    echo "├── Admin User: admin@idp.local / TempPass123!"
+    echo "└── Developer User: developer@idp.local / TempPass123!"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argocd-cognito-setup
+  namespace: argocd
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argocd-cognito-setup
+  namespace: argocd
+rules:
+- apiGroups: [""]
+  resources: ["secrets", "configmaps"]
+  verbs: ["get", "list", "patch", "update"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argocd-cognito-setup
+  namespace: argocd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: argocd-cognito-setup
+subjects:
+- kind: ServiceAccount
+  name: argocd-cognito-setup
+  namespace: argocd

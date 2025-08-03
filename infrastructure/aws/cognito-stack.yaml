@@ -1,0 +1,271 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cognito-localstack-config
+  namespace: default
+  labels:
+    app.kubernetes.io/name: cognito-config
+data:
+  setup-cognito.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    echo "🚀 Setting up AWS Cognito User Pool in LocalStack..."
+    
+    # Wait for LocalStack to be ready (external deployment via host network)
+    until curl -s http://localhost:4566/_localstack/health | grep -q '"cognito-idp": "available"'; do
+      echo "⏳ Waiting for external LocalStack Cognito service..."
+      sleep 5
+    done
+    
+    export AWS_ACCESS_KEY_ID=test
+    export AWS_SECRET_ACCESS_KEY=test
+    export AWS_DEFAULT_REGION=us-east-1
+    export AWS_ENDPOINT_URL=http://localhost:4566
+    
+    # Create User Pool
+    echo "📝 Creating Cognito User Pool..."
+    USER_POOL_ID=$(aws cognito-idp create-user-pool \
+      --pool-name "idp-platform-users" \
+      --policies '{
+        "PasswordPolicy": {
+          "MinimumLength": 8,
+          "RequireUppercase": false,
+          "RequireLowercase": false,
+          "RequireNumbers": false,
+          "RequireSymbols": false
+        }
+      }' \
+      --auto-verified-attributes email \
+      --username-attributes email \
+      --schema '[
+        {
+          "Name": "email",
+          "AttributeDataType": "String",
+          "Required": true,
+          "Mutable": true
+        },
+        {
+          "Name": "given_name",
+          "AttributeDataType": "String",
+          "Required": false,
+          "Mutable": true
+        },
+        {
+          "Name": "family_name",
+          "AttributeDataType": "String",
+          "Required": false,
+          "Mutable": true
+        },
+        {
+          "Name": "role",
+          "AttributeDataType": "String",
+          "Required": false,
+          "Mutable": true
+        }
+      ]' \
+      --endpoint-url $AWS_ENDPOINT_URL \
+      --query 'UserPool.Id' \
+      --output text)
+    
+    echo "✅ User Pool created with ID: $USER_POOL_ID"
+    
+    # Create User Pool Client for Backstage
+    echo "📱 Creating Backstage User Pool Client..."
+    BACKSTAGE_CLIENT_ID=$(aws cognito-idp create-user-pool-client \
+      --user-pool-id $USER_POOL_ID \
+      --client-name "backstage-client" \
+      --generate-secret \
+      --supported-identity-providers COGNITO \
+      --callback-urls "http://localhost:3000/api/auth/cognito/callback,https://backstage.idp.local/api/auth/cognito/callback" \
+      --logout-urls "http://localhost:3000,https://backstage.idp.local" \
+      --allowed-o-auth-flows authorization_code \
+      --allowed-o-auth-scopes openid email profile \
+      --allowed-o-auth-flows-user-pool-client \
+      --endpoint-url $AWS_ENDPOINT_URL \
+      --query 'UserPoolClient.ClientId' \
+      --output text)
+    
+    echo "✅ Backstage client created with ID: $BACKSTAGE_CLIENT_ID"
+    
+    # Get client secret
+    BACKSTAGE_CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client \
+      --user-pool-id $USER_POOL_ID \
+      --client-id $BACKSTAGE_CLIENT_ID \
+      --endpoint-url $AWS_ENDPOINT_URL \
+      --query 'UserPoolClient.ClientSecret' \
+      --output text)
+    
+    # Create User Pool Client for ArgoCD
+    echo "🎯 Creating ArgoCD User Pool Client..."
+    ARGOCD_CLIENT_ID=$(aws cognito-idp create-user-pool-client \
+      --user-pool-id $USER_POOL_ID \
+      --client-name "argocd-client" \
+      --generate-secret \
+      --supported-identity-providers COGNITO \
+      --callback-urls "http://localhost:8080/auth/callback,https://argocd.idp.local/auth/callback" \
+      --logout-urls "http://localhost:8080,https://argocd.idp.local" \
+      --allowed-o-auth-flows authorization_code \
+      --allowed-o-auth-scopes openid email profile \
+      --allowed-o-auth-flows-user-pool-client \
+      --endpoint-url $AWS_ENDPOINT_URL \
+      --query 'UserPoolClient.ClientId' \
+      --output text)
+    
+    echo "✅ ArgoCD client created with ID: $ARGOCD_CLIENT_ID"
+    
+    # Get ArgoCD client secret
+    ARGOCD_CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client \
+      --user-pool-id $USER_POOL_ID \
+      --client-id $ARGOCD_CLIENT_ID \
+      --endpoint-url $AWS_ENDPOINT_URL \
+      --query 'UserPoolClient.ClientSecret' \
+      --output text)
+    
+    # Create User Pool Domain
+    echo "🌐 Creating User Pool Domain..."
+    aws cognito-idp create-user-pool-domain \
+      --domain "idp-platform-auth" \
+      --user-pool-id $USER_POOL_ID \
+      --endpoint-url $AWS_ENDPOINT_URL
+    
+    echo "✅ User Pool Domain created: idp-platform-auth"
+    
+    # Create default admin user
+    echo "👤 Creating default admin user..."
+    aws cognito-idp admin-create-user \
+      --user-pool-id $USER_POOL_ID \
+      --username "admin@idp.local" \
+      --user-attributes Name=email,Value=admin@idp.local Name=given_name,Value=Admin Name=family_name,Value=User Name=custom:role,Value=admin \
+      --temporary-password "TempPass123!" \
+      --message-action SUPPRESS \
+      --endpoint-url $AWS_ENDPOINT_URL
+    
+    echo "✅ Default admin user created: admin@idp.local / TempPass123!"
+    
+    # Create developer user
+    echo "👨‍💻 Creating default developer user..."
+    aws cognito-idp admin-create-user \
+      --user-pool-id $USER_POOL_ID \
+      --username "developer@idp.local" \
+      --user-attributes Name=email,Value=developer@idp.local Name=given_name,Value=Developer Name=family_name,Value=User Name=custom:role,Value=developer \
+      --temporary-password "TempPass123!" \
+      --message-action SUPPRESS \
+      --endpoint-url $AWS_ENDPOINT_URL
+    
+    echo "✅ Default developer user created: developer@idp.local / TempPass123!"
+    
+    # Store configuration in Kubernetes secrets
+    echo "🔐 Creating Kubernetes secrets..."
+    kubectl create secret generic cognito-config --from-literal=user-pool-id=$USER_POOL_ID \
+      --from-literal=region=us-east-1 \
+      --from-literal=issuer-url=http://localhost:4566/$USER_POOL_ID \
+      --from-literal=jwks-uri=http://localhost:4566/$USER_POOL_ID/.well-known/jwks.json \
+      --dry-run=client -o yaml | kubectl apply -f -
+    
+    kubectl create secret generic backstage-cognito --from-literal=client-id=$BACKSTAGE_CLIENT_ID \
+      --from-literal=client-secret=$BACKSTAGE_CLIENT_SECRET \
+      --from-literal=auth-url=http://localhost:4566/idp-platform-auth/oauth2/authorize \
+      --from-literal=token-url=http://localhost:4566/oauth2/token \
+      --dry-run=client -o yaml | kubectl apply -f -
+    
+    kubectl create secret generic argocd-cognito --from-literal=client-id=$ARGOCD_CLIENT_ID \
+      --from-literal=client-secret=$ARGOCD_CLIENT_SECRET \
+      --from-literal=auth-url=http://localhost:4566/idp-platform-auth/oauth2/authorize \
+      --from-literal=token-url=http://localhost:4566/oauth2/token \
+      --dry-run=client -o yaml | kubectl apply -f -
+    
+    echo "🎉 AWS Cognito setup completed successfully!"
+    echo ""
+    echo "📋 Configuration Summary:"
+    echo "├── User Pool ID: $USER_POOL_ID"
+    echo "├── Backstage Client ID: $BACKSTAGE_CLIENT_ID"
+    echo "├── ArgoCD Client ID: $ARGOCD_CLIENT_ID"
+    echo "├── Auth Domain: idp-platform-auth"
+    echo "├── Admin User: admin@idp.local / TempPass123!"
+    echo "└── Developer User: developer@idp.local / TempPass123!"
+    echo ""
+    echo "🔗 Auth URLs:"
+    echo "├── Authorization: http://localhost:4566/idp-platform-auth/oauth2/authorize"
+    echo "├── Token: http://localstack:4566/oauth2/token"
+    echo "└── JWKS: http://localstack:4566/$USER_POOL_ID/.well-known/jwks.json"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cognito-setup
+  namespace: default
+  labels:
+    app.kubernetes.io/name: cognito-setup
+spec:
+  template:
+    spec:
+      serviceAccountName: cognito-setup
+      restartPolicy: OnFailure
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: setup
+        image: amazon/aws-cli:latest
+        command: ["/bin/bash"]
+        args: ["/scripts/setup-cognito.sh"]
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          value: "test"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "test"
+        - name: AWS_DEFAULT_REGION
+          value: "us-east-1"
+        volumeMounts:
+        - name: setup-script
+          mountPath: /scripts
+        - name: kubectl-binary
+          mountPath: /usr/local/bin/kubectl
+          subPath: kubectl
+      initContainers:
+      - name: install-kubectl
+        image: alpine/k8s:1.28.2
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          cp /usr/bin/kubectl /shared/kubectl
+          chmod +x /shared/kubectl
+        volumeMounts:
+        - name: kubectl-binary
+          mountPath: /shared
+      volumes:
+      - name: setup-script
+        configMap:
+          name: cognito-localstack-config
+          defaultMode: 0755
+      - name: kubectl-binary
+        emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cognito-setup
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cognito-setup
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create", "get", "list", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cognito-setup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cognito-setup
+subjects:
+- kind: ServiceAccount
+  name: cognito-setup
+  namespace: default

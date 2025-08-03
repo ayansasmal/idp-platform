@@ -37,7 +37,18 @@ techdocs:
     type: "local"
 
 auth:
+  environment: development
   providers:
+    cognito:
+      development:
+        clientId: ${COGNITO_CLIENT_ID}
+        clientSecret: ${COGNITO_CLIENT_SECRET}
+        region: us-east-1
+        userPoolId: ${COGNITO_USER_POOL_ID}
+        authorizationUrl: ${COGNITO_AUTH_URL}
+        tokenUrl: ${COGNITO_TOKEN_URL}
+        scope: 'openid email profile'
+        prompt: login
     guest:
       dangerouslyAllowOutsideDevelopment: true
 
