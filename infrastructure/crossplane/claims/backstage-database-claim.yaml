@@ -10,7 +10,9 @@ spec:
   dbName: backstage
   size: small
   environment: development
-  writeConnectionSecretsToRef:
+  compositionRef:
+    name: postgresql-database
+  writeConnectionSecretToRef:
     name: backstage-db-connection
     namespace: backstage
 ---
@@ -26,6 +28,8 @@ spec:
   dbName: argocd
   size: small
   environment: development
-  writeConnectionSecretsToRef:
+  compositionRef:
+    name: postgresql-database
+  writeConnectionSecretToRef:
     name: argocd-db-connection
     namespace: argocd

@@ -1,0 +1,38 @@
+apiVersion: platform.idp/v1alpha1
+kind: XS3Bucket
+metadata:
+  name: argo-workflows-artifacts
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/name: argo-workflows-artifacts
+    platform.idp/component: storage
+spec:
+  bucketName: argo-workflows-artifacts
+  compositionRef:
+    name: s3-bucket-localstack
+---
+apiVersion: platform.idp/v1alpha1
+kind: XS3Bucket
+metadata:
+  name: backstage-artifacts
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: backstage-artifacts
+    platform.idp/component: storage
+spec:
+  bucketName: backstage-artifacts
+  compositionRef:
+    name: s3-bucket-localstack
+---
+apiVersion: platform.idp/v1alpha1
+kind: XS3Bucket
+metadata:
+  name: platform-backups
+  namespace: crossplane-system
+  labels:
+    app.kubernetes.io/name: platform-backups
+    platform.idp/component: storage
+spec:
+  bucketName: platform-backups
+  compositionRef:
+    name: s3-bucket-localstack
