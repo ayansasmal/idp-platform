@@ -223,4 +223,68 @@ kubectl port-forward -n istio-system svc/monitoring-dashboard 8090:80
 - **Grafana**: admin / admin (default)
 - **PostgreSQL**: backstage / backstage123
 
-Your IDP platform is running successfully! 🎉
+## 🔒 Authentication Troubleshooting
+
+### Common Issues
+
+**"Invalid redirect URL" Error:**
+```bash
+# Update Cognito client callback URLs
+awslocal cognito-idp update-user-pool-client \
+  --user-pool-id us-east-1_83e3f56175ff49d39e8efeb47fb76249 \
+  --client-id <client-id> \
+  --callback-urls "http://localhost:8080/api/dex/callback,https://argocd.idp.local/api/dex/callback"
+```
+
+**JWT Token Validation Fails:**
+```bash
+# Check JWKS endpoint accessibility
+curl -s http://localhost.localstack.cloud:4566/us-east-1_83e3f56175ff49d39e8efeb47fb76249/.well-known/jwks.json | jq
+
+# Check Istio JWT policies
+kubectl get requestauthentication -n istio-system
+kubectl describe requestauthentication cognito-jwt -n istio-system
+```
+
+**LocalStack Connectivity Issues:**
+```bash
+# Check LocalStack health
+curl -s http://localhost:4566/_localstack/health
+
+# Test from within cluster
+kubectl run test --image=curlimages/curl --rm -it --restart=Never -- \
+  curl -s http://host.docker.internal:4566/_localstack/health
+
+# Check external service configuration
+kubectl apply -f infrastructure/external-services/localstack-external-service.yaml
+```
+
+## 🗑️ Platform Lifecycle
+
+### Uninstall Platform
+
+```bash
+# Preview what will be removed
+./scripts/uninstall-idp.sh --dry-run
+
+# Complete platform removal (preserves LocalStack and tools)
+./scripts/uninstall-idp.sh --yes
+
+# Note: External LocalStack and system tools are preserved
+```
+
+### Reinstall Platform
+
+```bash
+# After uninstall, reinstall with:
+./scripts/setup-external-localstack.sh
+./scripts/quick-start.sh
+```
+
+Your IDP platform is running successfully with AWS Cognito authentication! 🎉
+
+**Next Steps:**
+1. Login to Backstage: http://localhost:3000 (Cognito: admin/TempPassword123!)
+2. Access ArgoCD: http://localhost:8080 (Cognito authentication)
+3. View monitoring: http://localhost:3001 (Grafana: admin/admin)
+4. Create your first application using Backstage templates!

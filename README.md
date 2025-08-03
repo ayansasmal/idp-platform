@@ -1,25 +1,31 @@
 # Kubernetes Integrated Developer Platform (IDP)
 
-A comprehensive Kubernetes-based Integrated Developer Platform designed for web applications with future IoT extensibility. This platform implements GitOps principles with ArgoCD as the central deployment engine.
+A comprehensive Kubernetes-based Integrated Developer Platform designed for web applications with future IoT extensibility. This platform implements GitOps principles with ArgoCD as the central deployment engine, featuring AWS Cognito authentication and hybrid architecture with external LocalStack for development.
 
 ## 🏗️ Architecture Overview
 
 ### Core Components
 
-- **ArgoCD**: GitOps-based continuous deployment (central deployment engine)
-- **Crossplane**: Infrastructure as Code with LocalStack for local development
-- **Istio**: Service mesh for traffic management, security (mTLS), and observability
-- **Backstage**: Developer portal with self-service templates
-- **External Secrets Operator**: Kubernetes secrets management
-- **Custom CRDs**: Platform abstractions (`WebApplication` CRD)
+- **ArgoCD**: GitOps-based continuous deployment with AWS Cognito authentication
+- **AWS Cognito**: Centralized OAuth/OIDC authentication for all platform services
+- **External LocalStack**: AWS service emulation (Cognito, RDS, S3, Secrets Manager, ECR)
+- **Crossplane**: Infrastructure as Code with hybrid LocalStack/AWS providers
+- **Istio**: Service mesh with JWT validation, mTLS, and observability
+- **Backstage**: Developer portal with Cognito authentication and self-service templates
+- **External Secrets Operator**: Kubernetes secrets management with LocalStack/AWS integration
+- **Custom CRDs**: Platform abstractions (`WebApplication`, `XDatabase`, `XS3Bucket`)
 
 ### Key Features
 
+- **Centralized Authentication**: AWS Cognito OAuth/OIDC for all services
+- **Hybrid Architecture**: Kubernetes platform + AWS managed services
+- **External LocalStack**: Complete AWS service emulation for development
 - **GitOps-First**: Everything deployed via ArgoCD App-of-Apps pattern
-- **Multi-Environment**: Local (LocalStack) → Staging → Production
-- **Self-Service**: Backstage templates for application scaffolding
+- **Multi-Environment**: Local (LocalStack) → Staging (AWS) → Production (AWS)
+- **Self-Service**: Backstage templates with Cognito authentication
 - **Observable**: Integrated Grafana, Prometheus, Jaeger, Kiali
-- **Secure**: mTLS, RBAC, cert-manager, External Secrets
+- **Secure**: JWT validation, mTLS, RBAC, cert-manager, encrypted secrets
+- **Production Ready**: Comprehensive automation and uninstall scripts
 
 ## 🚀 Quick Start
 
@@ -30,11 +36,14 @@ A comprehensive Kubernetes-based Integrated Developer Platform designed for web 
 git clone https://github.com/your-org/idp-platform.git
 cd idp-platform
 
-# Setup development environment (first time only)
-./scripts/dev-setup.sh
+# Setup external LocalStack (required)
+./scripts/setup-external-localstack.sh
 
 # Start the entire platform
 ./scripts/quick-start.sh
+
+# Optional: Setup development aliases
+./scripts/dev-setup.sh
 ```
 
 **That's it!** Your IDP platform will be running with all services accessible via browser.
@@ -43,11 +52,24 @@ cd idp-platform
 
 Once started, access your platform services:
 
-- **ArgoCD (GitOps)**: http://localhost:8080
-- **Backstage (Developer Portal)**: http://localhost:3000
-- **Grafana (Monitoring)**: http://localhost:3001
+- **ArgoCD (GitOps)**: http://localhost:8080 🔐 *Cognito Authentication*
+- **Backstage (Developer Portal)**: http://localhost:3000 🔐 *Cognito Authentication*
+- **Grafana (Monitoring)**: http://localhost:3001 (admin/admin)
 - **Prometheus (Metrics)**: http://localhost:9090
 - **Jaeger (Tracing)**: http://localhost:16686
+- **Kiali (Service Mesh)**: http://localhost:20001
+- **Monitoring Dashboard**: http://localhost:8090
+- **External LocalStack**: http://localhost:4566
+
+### 🔐 Authentication
+
+**Test Cognito Accounts:**
+- **Admin**: `admin` / `TempPassword123!`
+- **Developer**: `developer` / `TempPassword123!`
+
+**Service Accounts:**
+- **Grafana**: admin / admin
+- **LocalStack**: No authentication required
 - **Kiali (Service Mesh)**: http://localhost:20001
 - **Monitoring Dashboard**: http://localhost:8090
 
@@ -74,10 +96,13 @@ idp-grafana        # Open Grafana
 
 ## 📋 Prerequisites
 
-- **Kubernetes cluster** (Docker Desktop, Kind, or Minikube)
+- **Docker Desktop** with Kubernetes enabled (recommended) or Kind/Minikube
 - **kubectl** configured with cluster access
 - **Docker** for container operations
-- **Helm** for package management (optional)
+- **awslocal** CLI (automatically installed by setup scripts)
+- **curl** and **jq** for API operations
+- **External LocalStack** for AWS service emulation
+- **Git** for repository operations
 
 ## 🔧 Manual Setup (Advanced)
 
@@ -307,9 +332,32 @@ Changes will be automatically deployed via ArgoCD GitOps.
 
 ## 📚 Documentation
 
-- [Architecture Overview](docs/architecture/platform-overview.md)
-- [Platform Operations](docs/runbooks/platform-operations.md)
-- [Disaster Recovery](docs/runbooks/disaster-recovery.md)
+### 🏗️ Architecture & Design
+- [Platform Architecture Overview](docs/architecture/platform-architecture.md) - Complete architecture documentation
+- [Platform Components Overview](docs/architecture/platform-overview.md) - Component-focused architecture
+- [Component Diagrams](docs/architecture/component-diagrams.md) - Visual architecture diagrams
+
+### 🚀 Getting Started & Tutorials
+- [Getting Started Guide](docs/tutorials/getting-started.md) - Quick start with Cognito authentication
+- [Platform Lifecycle Management](docs/tutorials/platform-lifecycle-management.md) - Installation, updates, backup, uninstall
+- [Monitoring & Observability](docs/tutorials/monitoring-observability.md) - Comprehensive monitoring guide
+- [Container Builds Guide](docs/tutorials/container-builds-guide.md) - Building and managing containers
+- [Deploying Applications](docs/tutorials/deploying-applications.md) - Application deployment workflows
+- [Argo Workflows CI/CD](docs/tutorials/argo-workflows-ci-cd.md) - Advanced CI/CD patterns
+
+### 🛠️ Operations & Runbooks
+- [Platform Operations](docs/runbooks/platform-operations.md) - Operational procedures with Cognito troubleshooting
+- [Disaster Recovery](docs/runbooks/disaster-recovery.md) - Backup and recovery procedures
+
+### 📖 User Guides
+- [Access Guide](docs/guides/access-guide.md) - Service access with Cognito authentication
+
+### 📈 Platform Status & Implementation
+- [Platform Status](docs/platform-status/PLATFORM_STATUS.md) - Current implementation status
+- [Argo Workflows Implementation](docs/implementation/ARGO_WORKFLOWS_IMPLEMENTATION.md)
+- [Automation Scripts Update](docs/implementation/AUTOMATION_SCRIPTS_UPDATE.md)
+- [Backstage Real Deployment](docs/implementation/BACKSTAGE_REAL_DEPLOYMENT.md)
+- [Unified Script Improvements](docs/implementation/UNIFIED_SCRIPT_IMPROVEMENTS.md)
 
 ## 🔮 Future Roadmap
 

@@ -493,22 +493,42 @@ const sdk = new NodeSDK({
 
 sdk.start();
 
-// Custom instrumentation
+// Custom instrumentation with authentication context
 const { trace } = require('@opentelemetry/api');
 
 const tracer = trace.getTracer('user-service', '1.0.0');
 
-async function createUser(userData) {
+async function createUser(userData, authContext) {
   return tracer.startActiveSpan('create-user', async (span) => {
     try {
       span.setAttributes({
         'user.id': userData.id,
         'user.email': userData.email,
-        'operation.type': 'create'
+        'operation.type': 'create',
+        'auth.user_id': authContext.userId,
+        'auth.issuer': authContext.issuer,
+        'auth.client_id': authContext.clientId,
+        'database.provider': process.env.NODE_ENV === 'development' ? 'localstack' : 'aws'
       });
       
-      // Simulate database operation
+      // Add authentication span
+      const authSpan = tracer.startSpan('verify-token');
+      authSpan.setAttributes({
+        'auth.token_type': 'jwt',
+        'auth.issuer': authContext.issuer
+      });
+      authSpan.end();
+      
+      // Database operation span
+      const dbSpan = tracer.startSpan('database-create-user');
+      dbSpan.setAttributes({
+        'db.operation': 'INSERT',
+        'db.table': 'users',
+        'db.provider': process.env.NODE_ENV === 'development' ? 'localstack-rds' : 'aws-rds'
+      });
+      
       const user = await database.users.create(userData);
+      dbSpan.end();
       
       span.setStatus({ code: trace.SpanStatusCode.OK });
       return user;

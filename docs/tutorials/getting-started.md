@@ -8,19 +8,52 @@ This guide will help you get started with the Integrated Developer Platform (IDP
 
 Before you begin, ensure you have:
 
-- Access to the platform (contact platform team if needed)
-- Basic understanding of Kubernetes concepts
-- Git repository with your application code
+- **Platform Access**: AWS Cognito user account (contact platform team)
+- **Local Environment**: Docker Desktop with Kubernetes enabled
+- **External LocalStack**: Running at http://localhost:4566
+- **Basic Knowledge**: Understanding of Kubernetes and containerization concepts
+- **Git Repository**: For your application code
+- **Tools**: `kubectl`, `awslocal`, and `docker` CLI tools installed
+
+## Platform Setup (10 minutes)
+
+### Step 0: Set Up External LocalStack
+
+First, ensure external LocalStack is running for development:
+
+```bash
+# 1. Set up external LocalStack
+./scripts/setup-external-localstack.sh
+
+# 2. Verify LocalStack is running
+curl -s http://localhost:4566/_localstack/health | jq '.services'
+
+# 3. Test awslocal connectivity
+awslocal sts get-caller-identity
+```
 
 ## Quick Start (5 minutes)
 
-### Step 1: Access the Developer Portal
+### Step 1: Start the Platform
+
+```bash
+# 1. Start the entire platform
+./scripts/quick-start.sh
+
+# 2. Wait for all services to be ready (2-3 minutes)
+./scripts/start-platform.sh health
+```
+
+### Step 2: Access the Developer Portal
 
 1. Open your browser and navigate to: `http://localhost:3000`
-2. Login with your corporate credentials
-3. You'll see the Backstage developer portal dashboard
+2. Click **"Sign in with Cognito"**
+3. Login with your AWS Cognito credentials:
+   - **Admin User**: `admin` / `TempPassword123!`
+   - **Developer User**: `developer` / `TempPassword123!`
+4. You'll see the Backstage developer portal dashboard with AWS Cognito authentication
 
-### Step 2: Create Your First Application
+### Step 3: Create Your First Application
 
 1. Click **"Create Component"** from the home page
 2. Select **"IDP Web Application"** template
@@ -32,7 +65,7 @@ Before you begin, ensure you have:
    ```
 4. Click **"Create"**
 
-### Step 3: Deploy Your Application
+### Step 4: Deploy Your Application
 
 The platform will automatically:
 - Create a Git repository
@@ -40,33 +73,78 @@ The platform will automatically:
 - Deploy to development environment
 - Configure monitoring and observability
 
-### Step 4: View Your Application
+### Step 5: View Your Application
 
-1. Go to ArgoCD dashboard: `https://localhost:8080`
-2. Find your application in the list
-3. Click to see deployment status
-4. Once synced, access your app at: `http://my-first-app.idp.local`
+1. Go to ArgoCD dashboard: `http://localhost:8080`
+2. Click **"Log in via Cognito"** and use your Cognito credentials
+3. Find your application in the list
+4. Click to see deployment status
+5. Once synced, access your app at: `http://my-first-app.idp.local`
 
 ## Detailed Tutorial
 
 ### Understanding the Platform
 
-The IDP platform provides:
+The IDP platform provides a comprehensive hybrid architecture with centralized authentication:
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Backstage     │    │   GitHub        │    │   ArgoCD        │
-│   Portal        │───▶│   Repository    │───▶│   Deployment    │
-│                 │    │                 │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Service       │    │   CI Pipeline   │    │   Kubernetes    │
-│   Catalog       │    │   (GitHub       │    │   Cluster       │
-│                 │    │    Actions)     │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+                    ┌─────────────────────────────────────────────────────┐
+                    │                External Dependencies                │
+                    │                                                     │
+                    │  ┌─────────────────┐    ┌─────────────────────────┐ │
+                    │  │   AWS Cognito   │    │     LocalStack           │ │
+                    │  │   (Auth/OIDC)   │    │   (AWS Emulation)       │ │
+                    │  │                 │    │   - S3, RDS, Secrets    │ │
+                    │  └─────────────────┘    └─────────────────────────┘ │
+                    └─────────────────────────────────────────────────────┘
+                                    │                       │
+                                    ▼                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Kubernetes Platform                               │
+│                                                                             │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────────────┐ │
+│  │   Backstage     │    │   GitHub        │    │       ArgoCD            │ │
+│  │   Portal        │───▶│   Repository    │───▶│    (GitOps CD)          │ │
+│  │ 🔐 Cognito Auth │    │                 │    │   🔐 Cognito Auth       │ │
+│  └─────────────────┘    └─────────────────┘    └─────────────────────────┘ │
+│           │                       │                       │               │
+│           ▼                       ▼                       ▼               │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────────────┐ │
+│  │   Service       │    │   CI Pipeline   │    │     Kubernetes          │ │
+│  │   Catalog       │    │   (GitHub       │    │     Workloads           │ │
+│  │                 │    │    Actions)     │    │                         │ │
+│  └─────────────────┘    └─────────────────┘    └─────────────────────────┘ │
+│           │                       │                       │               │
+│           ▼                       ▼                       ▼               │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────────────┐ │
+│  │   Istio Mesh    │    │  Container      │    │     Observability       │ │
+│  │  🔐 JWT Validate│    │  Registry       │    │   (Prometheus/Grafana)  │ │
+│  │   + mTLS        │    │  (LocalStack)   │    │                         │ │
+│  └─────────────────┘    └─────────────────┘    └─────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+🔐 = AWS Cognito Authentication     🌐 = External Service     📊 = Monitoring
 ```
+
+**Key Platform Components:**
+
+**Authentication Layer:**
+- **AWS Cognito**: Centralized OAuth/OIDC authentication for all services
+- **Istio JWT Validation**: Service mesh-level token verification
+- **RBAC Integration**: Role-based access control with Cognito groups
+
+**External Services:**
+- **LocalStack**: AWS service emulation (development)
+- **Cognito User Pool**: Authentication and user management
+- **LocalStack RDS**: Database services
+- **LocalStack S3**: Object storage
+- **LocalStack Secrets Manager**: Secret management
+
+**Platform Services:**
+- **Backstage**: Developer portal with Cognito authentication
+- **ArgoCD**: GitOps deployment with Cognito SSO
+- **Istio**: Service mesh with mTLS and JWT validation
+- **Monitoring**: Comprehensive observability stack
 
 ### Creating Applications
 
@@ -102,18 +180,14 @@ The IDP platform provides:
 #### Using the CLI (Advanced)
 
 ```bash
-# Install IDP CLI
-curl -L https://github.com/yourorg/idp-cli/releases/latest/download/idp-cli-linux -o idp
-chmod +x idp && sudo mv idp /usr/local/bin/
+# The IDP CLI is located in the repository root
+./idp-cli create user-service nginx:latest development development 2
 
-# Create application
-idp create app \
-  --name user-service \
-  --template nodejs-api \
-  --database postgresql
+# Check deployment status
+kubectl get webapplications -n development
 
-# Deploy application
-idp deploy user-service --env development
+# View application pods
+kubectl get pods -n development -l app=user-service
 ```
 
 ### Working with Environments
@@ -121,33 +195,45 @@ idp deploy user-service --env development
 The platform provides three environments:
 
 #### Development Environment
-- **Purpose**: Local development and testing
+- **Purpose**: Local development and testing using LocalStack
+- **Authentication**: LocalStack Cognito for development
+- **Database**: LocalStack RDS PostgreSQL
+- **Storage**: LocalStack S3 buckets
 - **Resources**: Minimal resource allocation
-- **Data**: Sample/test data
-- **Access**: All developers
+- **Access**: All developers with Cognito accounts
 
 ```bash
 # Port forward to development
 kubectl port-forward svc/my-app 8080:80 -n development
+
+# Check LocalStack services
+awslocal rds describe-db-instances
+awslocal s3 ls
 ```
 
 #### Staging Environment  
-- **Purpose**: Pre-production testing
+- **Purpose**: Pre-production testing with AWS services
+- **Authentication**: AWS Cognito (staging user pool)
+- **Database**: AWS RDS with sanitized data
+- **Storage**: AWS S3 with test data
 - **Resources**: Production-like resources
-- **Data**: Sanitized production data
 - **Access**: QA team and senior developers
 
 ```bash
 # Access staging environment
-kubectl config set-context staging
 kubectl get pods -n staging
+
+# Check AWS resources (when configured)
+# aws rds describe-db-instances --region us-east-1
 ```
 
 #### Production Environment
-- **Purpose**: Live user traffic
-- **Resources**: Full production resources
-- **Data**: Live production data
-- **Access**: Platform team and approved personnel
+- **Purpose**: Live user traffic with full AWS services
+- **Authentication**: AWS Cognito (production user pool)
+- **Database**: AWS RDS with automated backups
+- **Storage**: AWS S3 with lifecycle policies
+- **Resources**: Full production resources with auto-scaling
+- **Access**: Platform team and approved personnel with MFA
 
 ### Understanding GitOps Workflow
 
@@ -215,19 +301,30 @@ spec:
 
 ```bash
 # Secrets are managed automatically via External Secrets Operator
-# Add secrets to AWS Secrets Manager or your secret store
+# For development: LocalStack Secrets Manager
+awslocal secretsmanager list-secrets
+
+# For production: AWS Secrets Manager  
+# aws secretsmanager list-secrets --region us-east-1
 
 # View secrets in cluster
+kubectl get secrets -n development
 kubectl get secrets -n production
 
 # Check External Secret status
-kubectl get externalsecrets -n production
+kubectl get externalsecrets --all-namespaces
+
+# Cognito client secrets are automatically synchronized
+kubectl get secret cognito-clients -n argocd -o yaml
+kubectl get secret cognito-clients -n backstage -o yaml
 ```
 
 #### Database Configuration
 
 ```yaml
-# Database will be automatically provisioned
+# Database will be automatically provisioned via Crossplane
+# Development: LocalStack RDS
+# Production: AWS RDS
 apiVersion: platform.idp/v1alpha1
 kind: WebApplication
 spec:
@@ -238,6 +335,8 @@ spec:
     backup:
       enabled: true
       schedule: "0 2 * * *"
+    # Automatically uses LocalStack in development
+    # and AWS RDS in production
 ```
 
 ### Monitoring Your Application
@@ -289,6 +388,39 @@ data:
           severity: critical
         annotations:
           summary: "High error rate in my-app"
+```
+
+### Authentication Troubleshooting
+
+#### Cannot Login to ArgoCD/Backstage
+
+```bash
+# Check Cognito user pool
+awslocal cognito-idp list-users --user-pool-id <pool-id>
+
+# Check OIDC configuration
+kubectl get configmap argocd-cm -n argocd -o yaml | grep -A 10 oidc
+
+# Test JWKS endpoint
+curl -s http://localhost.localstack.cloud:4566/<pool-id>/.well-known/jwks.json | jq
+
+# Check Istio JWT validation
+kubectl get requestauthentication -n istio-system
+```
+
+#### LocalStack Connectivity Issues
+
+```bash
+# Check LocalStack health
+curl -s http://localhost:4566/_localstack/health | jq
+
+# Test from within cluster
+kubectl run test --image=curlimages/curl --rm -it --restart=Never -- \
+  curl -s http://host.docker.internal:4566/_localstack/health
+
+# Check external service configuration
+kubectl get service localhost-localstack-cloud -n default
+kubectl get endpoints localstack-external -n default
 ```
 
 ### Troubleshooting Common Issues
@@ -418,23 +550,60 @@ my-app/
 4. **Test failure scenarios**
 5. **Monitor error rates and SLAs**
 
+## Platform Management
+
+### Quick Commands
+
+```bash
+# Start platform
+./scripts/quick-start.sh
+
+# Check platform health
+./scripts/start-platform.sh health
+
+# Stop platform
+./scripts/start-platform.sh stop
+
+# Restart platform
+./scripts/start-platform.sh start
+
+# Platform status
+./scripts/start-platform.sh status
+
+# View service logs
+./scripts/start-platform.sh logs argocd
+```
+
+### Platform Uninstall
+
+```bash
+# Preview what will be removed
+./scripts/uninstall-idp.sh --dry-run
+
+# Complete platform removal
+./scripts/uninstall-idp.sh --yes
+
+# Note: External LocalStack and system tools are preserved
+```
+
 ## Getting Help
 
 ### Documentation
-- Platform documentation: `/docs`
-- API reference: `/docs/api`
-- Troubleshooting guide: `/docs/troubleshooting`
+- **Platform Architecture**: `/docs/architecture/platform-overview.md`
+- **Operations Runbook**: `/docs/runbooks/platform-operations.md`
+- **Monitoring Guide**: `/docs/tutorials/monitoring-observability.md`
 
 ### Support Channels
 - **Slack**: #platform-support
 - **Email**: platform-team@company.com
 - **Office Hours**: Tuesdays 2-3 PM
+- **GitHub Issues**: Platform bug reports and feature requests
 
 ### Self-Service Resources
-- **Service Catalog**: Browse available services
-- **Templates**: Pre-built application templates
-- **Monitoring**: Real-time platform status
-- **Tutorials**: Step-by-step guides
+- **Service Catalog**: Browse available services in Backstage
+- **Templates**: Pre-built application templates with Cognito auth
+- **Monitoring**: Real-time platform status with Grafana
+- **ArgoCD**: GitOps deployment status with Cognito SSO
 
 ## Next Steps
 
@@ -447,10 +616,16 @@ Once you're comfortable with the basics:
 5. **Contributing**: Help improve the platform for everyone
 
 ### Advanced Tutorials
-- [Multi-Environment Deployment Strategies](./multi-environment-deployment.md)
-- [Custom Monitoring and Alerting](./custom-monitoring.md)
-- [Security Best Practices](./security-best-practices.md)
-- [Performance Optimization](./performance-optimization.md)
-- [Contributing to the Platform](./contributing.md)
+- [Monitoring and Observability Guide](./monitoring-observability.md)
+- [Container Builds and CI/CD](./container-builds-guide.md)
+- [ArgoCD Workflows](./argo-workflows-ci-cd.md)
+- [Deploying Applications](./deploying-applications.md)
+- [Platform Operations Runbook](../runbooks/platform-operations.md)
+
+### External Dependencies
+- **LocalStack**: Required for development environment
+- **AWS Cognito**: Authentication and authorization
+- **Docker Desktop**: Kubernetes runtime
+- **External Services**: Properly configured service discovery
 
 Happy coding! 🎉

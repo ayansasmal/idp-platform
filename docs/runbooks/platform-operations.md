@@ -9,6 +9,9 @@ This runbook provides step-by-step procedures for common operational tasks on th
 - `kubectl` configured with cluster access
 - `helm` CLI installed
 - `argocd` CLI installed (optional)
+- `awslocal` CLI installed for LocalStack operations
+- AWS Cognito authentication configured
+- External LocalStack running (for development)
 - Platform monitoring dashboard access
 
 ## Quick Health Check
@@ -23,6 +26,13 @@ kubectl get pods --all-namespaces | grep -E "(istio-system|argocd|backstage|cros
 kubectl get pods -n istio-system -o wide
 kubectl get pods -n argocd -o wide
 kubectl get pods -n crossplane-system -o wide
+
+# Check external LocalStack connectivity
+curl -s http://localhost:4566/_localstack/health | jq '.services'
+
+# Check AWS Cognito authentication status
+kubectl get requestauthentication -n istio-system
+kubectl get authorizationpolicy -n istio-system
 ```
 
 ### 2. Service Mesh Health
@@ -211,6 +221,7 @@ kubectl rollout restart deployment/cert-manager -n cert-manager
 - External Secrets Operator alerts
 - Pods failing to start due to missing secrets
 - Authentication failures
+- Cognito client secret synchronization issues
 
 **Diagnosis Steps:**
 
@@ -224,6 +235,14 @@ kubectl describe secretstore <store-name> -n <namespace>
 
 # 3. Check ESO logs
 kubectl logs -n external-secrets-system deployment/external-secrets
+
+# 4. Test LocalStack Secrets Manager connectivity
+awslocal secretsmanager list-secrets
+awslocal secretsmanager get-secret-value --secret-id <secret-name>
+
+# 5. Check Cognito client secrets
+kubectl get secret cognito-clients -n argocd -o yaml
+kubectl get secret cognito-clients -n backstage -o yaml
 ```
 
 **Resolution Steps:**
@@ -232,11 +251,112 @@ kubectl logs -n external-secrets-system deployment/external-secrets
 # 1. Force secret refresh
 kubectl delete externalsecret <secret-name> -n <namespace>
 
-# 2. Check AWS credentials (for AWS Secrets Manager)
+# 2. Check AWS/LocalStack credentials
 kubectl get secret aws-credentials -n external-secrets-system -o yaml
 
-# 3. Restart External Secrets Operator
+# 3. Test LocalStack connectivity
+curl -s http://localhost:4566/_localstack/health
+
+# 4. Restart External Secrets Operator
 kubectl rollout restart deployment/external-secrets -n external-secrets-system
+
+# 5. Recreate Cognito clients (if needed)
+kubectl apply -f infrastructure/aws/cognito-stack.yaml
+```
+
+### Authentication Issues
+
+**Symptoms:**
+- Users cannot log into ArgoCD or Backstage
+- JWT token validation failures
+- OIDC redirect errors
+- "Invalid redirect URL" errors
+
+**Diagnosis Steps:**
+
+```bash
+# 1. Check Cognito User Pool status
+awslocal cognito-idp describe-user-pool --user-pool-id <pool-id>
+
+# 2. Check OIDC client configuration
+awslocal cognito-idp describe-user-pool-client --user-pool-id <pool-id> --client-id <client-id>
+
+# 3. Check Istio JWT validation
+kubectl logs -n istio-system deployment/istiod | grep -i jwt
+
+# 4. Check ArgoCD OIDC configuration
+kubectl get configmap argocd-cm -n argocd -o yaml | grep -A 20 oidc
+
+# 5. Test JWKS endpoint accessibility
+curl -s http://localhost.localstack.cloud:4566/<user-pool-id>/.well-known/jwks.json | jq
+```
+
+**Resolution Steps:**
+
+```bash
+# 1. Update OIDC client callback URLs
+awslocal cognito-idp update-user-pool-client \
+  --user-pool-id <pool-id> \
+  --client-id <client-id> \
+  --callback-urls "http://localhost:8080/api/dex/callback,https://argocd.idp.local/api/dex/callback"
+
+# 2. Restart ArgoCD server
+kubectl rollout restart deployment/argocd-server -n argocd
+
+# 3. Update Istio JWT policies
+kubectl apply -f infrastructure/istio/jwt-policy.yaml
+
+# 4. Check and update issuer configuration
+kubectl patch configmap argocd-cm -n argocd --patch-file argocd-oidc-patch.yaml
+
+# 5. Verify JWKS endpoint in service mesh
+kubectl apply -f infrastructure/external-services/localstack-external-service.yaml
+```
+
+### External LocalStack Issues
+
+**Symptoms:**
+- Platform cannot connect to LocalStack services
+- AWS service emulation failures
+- ECR push/pull failures
+
+**Diagnosis Steps:**
+
+```bash
+# 1. Check LocalStack container status
+docker ps | grep localstack
+
+# 2. Check LocalStack health
+curl -s http://localhost:4566/_localstack/health | jq
+
+# 3. Test service connectivity from cluster
+kubectl run test-pod --image=curlimages/curl --rm -it --restart=Never -- curl -s http://host.docker.internal:4566/_localstack/health
+
+# 4. Check external service configuration
+kubectl get service localhost-localstack-cloud -n default
+kubectl get endpoints localstack-external -n default
+
+# 5. Test awslocal connectivity
+awslocal sts get-caller-identity
+```
+
+**Resolution Steps:**
+
+```bash
+# 1. Restart LocalStack container
+docker restart localstack-idp
+
+# 2. Update external service configuration
+kubectl apply -f infrastructure/external-services/localstack-external-service.yaml
+
+# 3. Check hostname resolution
+echo "127.0.0.1 localhost.localstack.cloud" | sudo tee -a /etc/hosts
+
+# 4. Run LocalStack setup script
+./scripts/setup-external-localstack.sh
+
+# 5. Verify ECR connectivity
+awslocal ecr get-login-password | docker login --username AWS --password-stdin 000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566
 ```
 
 ## Maintenance Procedures
@@ -479,6 +599,17 @@ kubectl get clusterrolebindings
 
 # Audit service accounts
 kubectl get serviceaccounts --all-namespaces
+
+# Check Cognito user pools and groups
+awslocal cognito-idp list-users --user-pool-id <pool-id>
+awslocal cognito-idp list-groups --user-pool-id <pool-id>
+
+# Check ArgoCD RBAC policies
+kubectl get configmap argocd-rbac-cm -n argocd -o yaml
+
+# Audit JWT authentication policies
+kubectl get requestauthentication --all-namespaces
+kubectl get authorizationpolicy --all-namespaces
 ```
 
 ### 3. Vulnerability Management
@@ -525,6 +656,87 @@ kubectl describe pv <pv-name>
 kubectl get storageclass
 ```
 
+## Platform Lifecycle Management
+
+### Complete Platform Uninstall
+
+**When to Use:**
+- Environment decommissioning
+- Clean platform reinstallation
+- Development environment cleanup
+
+**Procedure:**
+
+```bash
+# 1. Run comprehensive uninstall script
+./scripts/uninstall-idp.sh --dry-run  # Preview what will be removed
+./scripts/uninstall-idp.sh --yes      # Execute uninstall
+
+# 2. Verify cleanup
+kubectl get namespaces | grep -E "(argocd|backstage|crossplane|istio)"
+kubectl get crd | grep -E "(platform.idp|crossplane|argoproj)"
+
+# 3. Check preserved resources
+curl -s http://localhost:4566/_localstack/health  # LocalStack should remain
+awslocal --version  # Tools should remain
+```
+
+### Platform Reinstallation
+
+```bash
+# 1. Ensure external LocalStack is running
+./scripts/setup-external-localstack.sh
+
+# 2. Start platform
+./scripts/quick-start.sh
+
+# 3. Verify deployment
+./scripts/start-platform.sh health
+```
+
+## Authentication Troubleshooting Guide
+
+### Common Cognito Issues
+
+| Issue | Symptoms | Resolution |
+|-------|----------|------------|
+| Invalid redirect URL | OIDC login fails | Update callback URLs in Cognito client |
+| JWT validation fails | 401 errors in service mesh | Check JWKS endpoint accessibility |
+| User not found | Login rejected | Create user in Cognito user pool |
+| Client secret mismatch | OIDC client_secret error | Regenerate and update client secret |
+| Issuer mismatch | Token validation fails | Update issuer URL in ArgoCD/Istio config |
+
+### Quick Authentication Test
+
+```bash
+# Test Cognito user pool
+awslocal cognito-idp admin-get-user --user-pool-id <pool-id> --username admin
+
+# Test JWKS endpoint
+curl -s http://localhost.localstack.cloud:4566/<pool-id>/.well-known/jwks.json
+
+# Test ArgoCD OIDC
+curl -s http://localhost:8080/api/dex/.well-known/openid_configuration
+
+# Test service mesh JWT validation
+kubectl get requestauthentication cognito-jwt -n istio-system -o yaml
+```
+
+## External Dependencies
+
+### LocalStack Requirements
+- **Version**: 3.0+
+- **Services**: cognito-idp, rds, s3, secretsmanager, iam, ecr
+- **Endpoint**: http://localhost:4566
+- **Hostname**: localhost.localstack.cloud
+
+### AWS Services (Production)
+- **Cognito**: User pools with OIDC clients
+- **RDS**: PostgreSQL for persistent storage
+- **S3**: Artifact and backup storage
+- **Secrets Manager**: Secret management
+- **ECR**: Container registry
+
 ## Contact Information
 
 **Platform Team:**
@@ -536,3 +748,8 @@ kubectl get storageclass
 - Level 1: Platform Engineers
 - Level 2: Senior Platform Engineers
 - Level 3: Platform Architect
+
+**External Dependencies:**
+- LocalStack Support: https://docs.localstack.cloud/
+- AWS Cognito Documentation: https://docs.aws.amazon.com/cognito/
+- Istio Security Documentation: https://istio.io/latest/docs/concepts/security/

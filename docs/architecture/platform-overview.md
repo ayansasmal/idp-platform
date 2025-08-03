@@ -18,10 +18,11 @@ The Integrated Developer Platform (IDP) is a comprehensive Kubernetes-based plat
 - **Observability**: Built-in monitoring, logging, and tracing
 - **Security**: Zero-trust networking with mTLS by default
 
-### 3. Multi-Environment Support
-- **Local Development**: LocalStack + Kind/Docker Desktop
-- **Staging**: AWS with reduced resource allocation
+### 3. Hybrid Multi-Environment Support
+- **Local Development**: External LocalStack + Docker Desktop Kubernetes
+- **Staging**: AWS managed services with reduced resource allocation
 - **Production**: Full AWS infrastructure with high availability
+- **Hybrid Architecture**: Kubernetes observability + AWS managed storage/auth
 
 ## Platform Components
 
@@ -49,11 +50,12 @@ The Integrated Developer Platform (IDP) is a comprehensive Kubernetes-based plat
 - **Compositions**: Reusable infrastructure templates
 - **Claims**: Developer-friendly resource requests
 
-#### LocalStack
-- **Purpose**: Local AWS service emulation
-- **Services**: S3, RDS, Secrets Manager, ECR
-- **Integration**: Seamless transition from local to cloud
-- **Development**: Cost-effective local testing
+#### LocalStack (External)
+- **Purpose**: External AWS service emulation for development
+- **Services**: Cognito, S3, RDS, Secrets Manager, ECR, IAM
+- **Integration**: External service discovery, seamless cloud transition
+- **Development**: Cost-effective local testing with production parity
+- **Architecture**: Runs outside Kubernetes to avoid resource conflicts
 
 ### Service Mesh Layer
 
@@ -78,21 +80,32 @@ The Integrated Developer Platform (IDP) is a comprehensive Kubernetes-based plat
 - **Security**: Certificate management, encryption
 - **Observability**: Request tracing, metrics collection
 
-### Security & Secrets Layer
+### Authentication & Security Layer
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                 Security & Secrets Layer                    │
+│              Authentication & Security Layer                │
 ├─────────────────┬─────────────────┬─────────────────────────┤
-│ External Secrets│  cert-manager   │     Istio Security      │
-│   Operator      │   Certificate   │      Policies           │
-│                 │   Management    │                         │
+│  AWS Cognito    │ External Secrets│     Istio Security      │
+│  OAuth/OIDC     │   Operator      │      Policies           │
+│ Authentication  │                 │     & JWT Validation    │
+├─────────────────┼─────────────────┼─────────────────────────┤
+│  cert-manager   │   LocalStack    │      mTLS Service       │
+│   Certificate   │   Integration   │      Mesh Security      │
+│   Management    │                 │                         │
 └─────────────────┴─────────────────┴─────────────────────────┘
 ```
 
+#### AWS Cognito Authentication
+- **Purpose**: Centralized OAuth/OIDC authentication for all platform services
+- **Integration**: ArgoCD, Backstage, and future services
+- **Features**: User pools, RBAC policies, JWT token validation
+- **LocalStack**: Full local development support with external LocalStack
+- **Security**: Industry-standard OAuth 2.0/OIDC flows
+
 #### External Secrets Operator (ESO)
 - **Purpose**: Synchronize secrets from external systems
-- **Backends**: AWS Secrets Manager, LocalStack
+- **Backends**: AWS Secrets Manager, LocalStack Secrets Manager
 - **Automation**: Automatic secret rotation and updates
 - **Security**: Encrypted at rest and in transit
 
@@ -101,6 +114,12 @@ The Integrated Developer Platform (IDP) is a comprehensive Kubernetes-based plat
 - **Providers**: Let's Encrypt, internal CA
 - **Automation**: Certificate provisioning and renewal
 - **Integration**: Istio Gateway integration
+
+#### Istio JWT Validation
+- **Purpose**: Service mesh-level JWT token validation
+- **Integration**: Cognito JWKS endpoint validation
+- **Policies**: RequestAuthentication and AuthorizationPolicy
+- **Security**: Zero-trust authentication at service mesh level
 
 ### CI/CD Layer
 
@@ -148,13 +167,14 @@ The Integrated Developer Platform (IDP) is a comprehensive Kubernetes-based plat
 - **Purpose**: High-level application abstraction
 - **Generated Resources**: Deployments, Services, Ingress, HPA
 - **Features**: Auto-scaling, health checks, resource limits
-- **Integration**: Istio service mesh, observability
+- **Integration**: Istio service mesh, observability, Cognito auth
 
-#### Platform Compositions
-- **Database**: PostgreSQL, MySQL with backup/restore
-- **Storage**: S3 buckets with lifecycle policies
-- **Networking**: VPC, subnets, security groups
-- **Monitoring**: Prometheus scraping, Grafana dashboards
+#### Platform Compositions (Hybrid Architecture)
+- **Database**: AWS RDS/Aurora with LocalStack for development
+- **Storage**: AWS S3 with LocalStack S3 for development
+- **Authentication**: AWS Cognito with LocalStack Cognito for development
+- **Secrets**: AWS Secrets Manager with LocalStack integration
+- **Monitoring**: Kubernetes-native Prometheus/Grafana + AWS CloudWatch integration
 
 ### Developer Experience Layer
 
@@ -170,6 +190,8 @@ The Integrated Developer Platform (IDP) is a comprehensive Kubernetes-based plat
 #### Backstage Developer Portal
 - **Purpose**: Unified developer experience
 - **Features**: Service catalog, documentation, templates
+- **Authentication**: AWS Cognito OAuth integration
+- **Database**: AWS RDS PostgreSQL (hybrid persistence)
 - **Integration**: GitHub, ArgoCD, monitoring tools
 - **Self-Service**: Application scaffolding and deployment
 
@@ -258,14 +280,16 @@ Application → Envoy → Prometheus → Grafana
 - **Monitoring**: Comprehensive audit logging
 
 ### Security Layers
-1. **Network**: Istio security policies, network policies
-2. **Identity**: Service accounts, RBAC, JWT validation
-3. **Data**: Encryption at rest and in transit
-4. **Application**: OWASP compliance, security scanning
+1. **Authentication**: AWS Cognito OAuth/OIDC with JWT validation
+2. **Network**: Istio security policies, mTLS, network policies
+3. **Identity**: Service accounts, RBAC, Cognito user pools
+4. **Data**: Encryption at rest and in transit
+5. **Application**: OWASP compliance, security scanning
 
 ### Secrets Management
-- **External Sources**: AWS Secrets Manager, HashiCorp Vault
+- **External Sources**: AWS Secrets Manager, LocalStack Secrets Manager
 - **Kubernetes Integration**: ESO synchronization
+- **Authentication**: Cognito client secrets, JWT signing keys
 - **Rotation**: Automatic secret rotation
 - **Audit**: Complete secret access logging
 
