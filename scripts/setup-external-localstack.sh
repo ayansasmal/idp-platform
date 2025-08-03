@@ -18,6 +18,177 @@ LOCALSTACK_HOST=${LOCALSTACK_HOST:-localhost}
 echo -e "${BLUE}🏗️ Setting up External LocalStack for IDP Platform${NC}"
 echo
 
+# Function to check if a command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Function to install dependencies
+install_dependencies() {
+    echo -e "${YELLOW}📦 Checking and installing required dependencies...${NC}"
+    
+    # Check for Python and pip
+    if ! command_exists python3; then
+        echo -e "${RED}❌ Python 3 is required but not installed${NC}"
+        echo -e "${YELLOW}💡 Install Python 3: ${NC}"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo "  brew install python3"
+        elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            echo "  sudo apt-get install python3 python3-pip  # Ubuntu/Debian"
+            echo "  sudo yum install python3 python3-pip     # RHEL/CentOS"
+        fi
+        return 1
+    fi
+    
+    if ! command_exists pip3; then
+        echo -e "${RED}❌ pip3 is required but not installed${NC}"
+        echo -e "${YELLOW}💡 Install pip3: ${NC}"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo "  brew install python3"
+        elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            echo "  sudo apt-get install python3-pip  # Ubuntu/Debian"
+            echo "  sudo yum install python3-pip      # RHEL/CentOS"
+        fi
+        return 1
+    fi
+    
+    # Check for jq
+    if ! command_exists jq; then
+        echo -e "${YELLOW}📦 Installing jq...${NC}"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            if command_exists brew; then
+                brew install jq
+            else
+                echo -e "${RED}❌ Homebrew not found. Please install jq manually: https://stedolan.github.io/jq/download/${NC}"
+                return 1
+            fi
+        elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            if command_exists apt-get; then
+                sudo apt-get update && sudo apt-get install -y jq
+            elif command_exists yum; then
+                sudo yum install -y jq
+            else
+                echo -e "${RED}❌ Package manager not found. Please install jq manually${NC}"
+                return 1
+            fi
+        fi
+    fi
+    
+    # Check for curl
+    if ! command_exists curl; then
+        echo -e "${YELLOW}📦 Installing curl...${NC}"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo -e "${GREEN}✅ curl should be pre-installed on macOS${NC}"
+        elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            if command_exists apt-get; then
+                sudo apt-get update && sudo apt-get install -y curl
+            elif command_exists yum; then
+                sudo yum install -y curl
+            fi
+        fi
+    fi
+    
+    # Check for docker
+    if ! command_exists docker; then
+        echo -e "${RED}❌ Docker is required but not installed${NC}"
+        echo -e "${YELLOW}💡 Install Docker: https://docs.docker.com/get-docker/${NC}"
+        return 1
+    fi
+    
+    # Check for docker-compose
+    if ! command_exists docker-compose; then
+        echo -e "${YELLOW}📦 Installing docker-compose...${NC}"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo -e "${GREEN}✅ docker-compose should be included with Docker Desktop${NC}"
+        elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            echo -e "${YELLOW}💡 Install docker-compose: ${NC}"
+            echo "  sudo curl -L \"https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)\" -o /usr/local/bin/docker-compose"
+            echo "  sudo chmod +x /usr/local/bin/docker-compose"
+        fi
+    fi
+    
+    echo -e "${GREEN}✅ Basic dependencies checked${NC}"
+    return 0
+}
+
+# Function to install awslocal
+install_awslocal() {
+    echo -e "${YELLOW}🔧 Checking awslocal installation...${NC}"
+    
+    if command_exists awslocal; then
+        echo -e "${GREEN}✅ awslocal is already installed${NC}"
+        awslocal --version
+        return 0
+    fi
+    
+    echo -e "${YELLOW}📦 Installing awslocal...${NC}"
+    
+    # Try to install awslocal
+    if pip3 install awslocal; then
+        echo -e "${GREEN}✅ awslocal installed successfully${NC}"
+    else
+        echo -e "${RED}❌ Failed to install awslocal with pip3${NC}"
+        echo -e "${YELLOW}💡 Trying alternative installation methods...${NC}"
+        
+        # Try with --user flag
+        if pip3 install --user awslocal; then
+            echo -e "${GREEN}✅ awslocal installed successfully (user scope)${NC}"
+            echo -e "${YELLOW}💡 You may need to add ~/.local/bin to your PATH${NC}"
+            export PATH="$HOME/.local/bin:$PATH"
+        else
+            echo -e "${RED}❌ Failed to install awslocal${NC}"
+            echo -e "${YELLOW}💡 Manual installation: pip3 install awslocal${NC}"
+            return 1
+        fi
+    fi
+    
+    # Verify installation
+    if command_exists awslocal; then
+        echo -e "${GREEN}✅ awslocal verification successful${NC}"
+        awslocal --version
+    else
+        echo -e "${RED}❌ awslocal installation verification failed${NC}"
+        echo -e "${YELLOW}💡 You may need to restart your shell or update PATH${NC}"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function to setup AWS CLI configuration for LocalStack
+setup_aws_config() {
+    echo -e "${YELLOW}⚙️ Setting up AWS CLI configuration for LocalStack...${NC}"
+    
+    # Create AWS config directory if it doesn't exist
+    mkdir -p ~/.aws
+    
+    # Create or update AWS credentials for LocalStack
+    cat > ~/.aws/credentials << 'EOF'
+[default]
+aws_access_key_id = test
+aws_secret_access_key = test
+region = us-east-1
+
+[localstack]
+aws_access_key_id = test
+aws_secret_access_key = test
+region = us-east-1
+EOF
+
+    # Create or update AWS config
+    cat > ~/.aws/config << 'EOF'
+[default]
+region = us-east-1
+output = json
+
+[profile localstack]
+region = us-east-1
+output = json
+EOF
+
+    echo -e "${GREEN}✅ AWS CLI configuration created${NC}"
+}
+
 # Function to check if LocalStack is running
 check_localstack() {
     echo -e "${YELLOW}⏳ Checking LocalStack availability...${NC}"
@@ -84,6 +255,11 @@ setup_hostname_resolution() {
 validate_services() {
     echo -e "${YELLOW}🔍 Validating required LocalStack services...${NC}"
     
+    if ! command_exists awslocal; then
+        echo -e "${RED}❌ awslocal not available for service validation${NC}"
+        return 1
+    fi
+    
     local health_response
     health_response=$(curl -s "http://${LOCALSTACK_HOST}:${LOCALSTACK_PORT}/_localstack/health" | jq -r '.services')
     
@@ -104,6 +280,15 @@ validate_services() {
     
     if $all_available; then
         echo -e "${GREEN}✅ All required services are available${NC}"
+        
+        # Test awslocal connectivity
+        echo -e "${YELLOW}🔗 Testing awslocal connectivity...${NC}"
+        if awslocal sts get-caller-identity >/dev/null 2>&1; then
+            echo -e "${GREEN}✅ awslocal connectivity test passed${NC}"
+        else
+            echo -e "${YELLOW}⚠️ awslocal connectivity test failed (LocalStack may still be starting)${NC}"
+        fi
+        
         return 0
     else
         echo -e "${RED}❌ Some services are not available${NC}"
@@ -198,13 +383,44 @@ main() {
     echo -e "${BLUE}🎯 External LocalStack Setup for IDP Platform${NC}"
     echo
     
+    # Install dependencies first
+    echo -e "${BLUE}🔧 Phase 1: Installing Dependencies${NC}"
+    if ! install_dependencies; then
+        echo -e "${RED}❌ Dependency installation failed. Please install missing dependencies and retry.${NC}"
+        exit 1
+    fi
+    echo
+    
+    # Install and configure awslocal
+    echo -e "${BLUE}🔧 Phase 2: Installing awslocal${NC}"
+    if ! install_awslocal; then
+        echo -e "${RED}❌ awslocal installation failed. Some features may not work.${NC}"
+        echo -e "${YELLOW}💡 You can install manually: pip3 install awslocal${NC}"
+    fi
+    echo
+    
+    # Setup AWS configuration
+    echo -e "${BLUE}🔧 Phase 3: AWS Configuration${NC}"
+    setup_aws_config
+    echo
+    
+    # Check LocalStack and validate services
+    echo -e "${BLUE}🔧 Phase 4: LocalStack Validation${NC}"
     if check_localstack; then
-        validate_services && echo -e "${GREEN}✅ LocalStack is properly configured${NC}" || echo -e "${RED}❌ LocalStack needs reconfiguration${NC}"
+        if validate_services; then
+            echo -e "${GREEN}✅ LocalStack is properly configured${NC}"
+        else
+            echo -e "${RED}❌ LocalStack needs reconfiguration${NC}"
+            echo -e "${YELLOW}💡 Some services may still be starting up${NC}"
+        fi
     else
         echo -e "${YELLOW}📝 LocalStack is not running. Creating setup files...${NC}"
         start_localstack
     fi
+    echo
     
+    # Additional setup steps
+    echo -e "${BLUE}🔧 Phase 5: Additional Configuration${NC}"
     setup_hostname_resolution
     create_idp_config
     test_connectivity
@@ -212,6 +428,14 @@ main() {
     
     echo -e "${GREEN}🎉 External LocalStack setup complete!${NC}"
     echo -e "${BLUE}💡 Run this script anytime to validate LocalStack configuration${NC}"
+    echo
+    
+    # Final recommendations
+    echo -e "${YELLOW}📝 Next Steps:${NC}"
+    echo "  1. If LocalStack is not running: docker-compose -f docker-compose.localstack.yml up -d"
+    echo "  2. Test awslocal: awslocal sts get-caller-identity"
+    echo "  3. Apply IDP external services: kubectl apply -f infrastructure/external-services/"
+    echo "  4. Test ArgoCD Cognito: https://localhost:8080"
 }
 
 # Run main function
