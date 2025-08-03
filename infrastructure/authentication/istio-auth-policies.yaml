@@ -1,0 +1,183 @@
+# Istio Authentication and Authorization Policies for Cognito Integration
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: cognito-jwt-auth
+  namespace: istio-system
+spec:
+  # Apply to all workloads in the mesh
+  jwtRules:
+  - issuer: "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_XXXXXXXXX"
+    jwksUri: "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_XXXXXXXXX/.well-known/jwks.json"
+    audiences:
+    - "your-cognito-client-id"
+    fromHeaders:
+    - name: Authorization
+      prefix: "Bearer "
+    fromParams:
+    - "access_token"
+    fromCookies:
+    - "_oauth2_proxy"
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: require-cognito-auth
+  namespace: istio-system
+spec:
+  # Apply to specific services that require authentication
+  selector:
+    matchLabels:
+      auth-required: "true"
+  rules:
+  - from:
+    - source:
+        requestPrincipals: ["https://cognito-idp.us-west-2.amazonaws.com/us-west-2_XXXXXXXXX/*"]
+  - to:
+    - operation:
+        methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: oauth2-proxy-access
+  namespace: authentication
+spec:
+  # Allow access to OAuth2 proxy endpoints
+  rules:
+  - to:
+    - operation:
+        methods: ["GET", "POST"]
+        paths: ["/oauth2/*", "/ping", "/ready"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: backstage-auth-policy
+  namespace: backstage
+spec:
+  selector:
+    matchLabels:
+      app: backstage
+  rules:
+  # Allow authenticated users
+  - from:
+    - source:
+        requestPrincipals: ["https://cognito-idp.us-west-2.amazonaws.com/us-west-2_XXXXXXXXX/*"]
+  # Allow OAuth2 proxy
+  - from:
+    - source:
+        namespaces: ["authentication"]
+  # Allow health checks
+  - to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/health", "/healthcheck", "/ready"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: argocd-auth-policy
+  namespace: argocd
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-server
+  rules:
+  # Allow authenticated users
+  - from:
+    - source:
+        requestPrincipals: ["https://cognito-idp.us-west-2.amazonaws.com/us-west-2_XXXXXXXXX/*"]
+  # Allow OAuth2 proxy
+  - from:
+    - source:
+        namespaces: ["authentication"]
+  # Allow ArgoCD internal communication
+  - from:
+    - source:
+        namespaces: ["argocd"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: monitoring-auth-policy
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      auth-required: "true"
+  rules:
+  # Allow authenticated users
+  - from:
+    - source:
+        requestPrincipals: ["https://cognito-idp.us-west-2.amazonaws.com/us-west-2_XXXXXXXXX/*"]
+  # Allow OAuth2 proxy
+  - from:
+    - source:
+        namespaces: ["authentication"]
+  # Allow internal monitoring communication
+  - from:
+    - source:
+        namespaces: ["monitoring"]
+---
+# Gateway configuration for authentication
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: auth-gateway
+  namespace: authentication
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "auth.idp.local"
+    tls:
+      httpsRedirect: true
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    tls:
+      mode: SIMPLE
+      credentialName: idp-tls-secret
+    hosts:
+    - "auth.idp.local"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: oauth2-proxy
+  namespace: authentication
+spec:
+  hosts:
+  - "auth.idp.local"
+  gateways:
+  - auth-gateway
+  http:
+  - match:
+    - uri:
+        prefix: "/oauth2/"
+    - uri:
+        exact: "/oauth2/sign_in"
+    - uri:
+        exact: "/oauth2/sign_out"
+    - uri:
+        exact: "/oauth2/callback"
+    route:
+    - destination:
+        host: oauth2-proxy.authentication.svc.cluster.local
+        port:
+          number: 4180
+  - match:
+    - uri:
+        prefix: "/"
+    route:
+    - destination:
+        host: oauth2-proxy.authentication.svc.cluster.local
+        port:
+          number: 4180

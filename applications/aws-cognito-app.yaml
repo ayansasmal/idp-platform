@@ -9,7 +9,7 @@ metadata:
 spec:
   project: idp-platform
   source:
-    repoURL: https://github.com/your-org/idp-platform.git
+    repoURL: https://github.com/ayansasmal/idp-platform
     targetRevision: HEAD
     path: infrastructure/aws
   destination:
@@ -44,7 +44,7 @@ metadata:
 spec:
   project: idp-platform
   source:
-    repoURL: https://github.com/your-org/idp-platform.git
+    repoURL: https://github.com/ayansasmal/idp-platform
     targetRevision: HEAD
     path: infrastructure/istio
     directory:
@@ -76,7 +76,7 @@ metadata:
 spec:
   project: idp-platform
   source:
-    repoURL: https://github.com/your-org/idp-platform.git
+    repoURL: https://github.com/ayansasmal/idp-platform
     targetRevision: HEAD
     path: applications/argocd
     directory:

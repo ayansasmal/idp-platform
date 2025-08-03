@@ -1,0 +1,407 @@
+# OPA Policy Management System
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-policy-updater
+  namespace: opa-system
+data:
+  update-policies.sh: |
+    #!/bin/bash
+    set -e
+    
+    # Policy update script for OPA
+    echo "Updating OPA policies..."
+    
+    # Create policy bundle
+    cd /policies
+    tar -czf bundle.tar.gz *.rego
+    
+    # Update OPA with new policies
+    curl -X PUT "http://opa:8181/v1/data" \
+         -H "Content-Type: application/json" \
+         -d @bundle.tar.gz
+    
+    echo "Policies updated successfully"
+    
+  validate-policies.sh: |
+    #!/bin/bash
+    set -e
+    
+    echo "Validating OPA policies..."
+    
+    # Test each policy file
+    for policy in /policies/*.rego; do
+        echo "Validating $policy"
+        opa test "$policy" || exit 1
+    done
+    
+    echo "All policies validated successfully"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: opa-policy-sync
+  namespace: opa-system
+spec:
+  schedule: "*/5 * * * *"  # Every 5 minutes
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: opa-policy-manager
+          containers:
+          - name: policy-sync
+            image: openpolicyagent/opa:0.57.1
+            command:
+            - /bin/sh
+            - -c
+            - |
+              # Sync policies from ConfigMap and reload OPA
+              echo "Syncing OPA policies..."
+              
+              # Download latest policies from git (if configured)
+              if [ -n "$GIT_REPO_URL" ]; then
+                git clone $GIT_REPO_URL /tmp/policies
+                cp /tmp/policies/*.rego /policies/
+              fi
+              
+              # Validate policies
+              /scripts/validate-policies.sh
+              
+              # Update OPA bundle
+              /scripts/update-policies.sh
+              
+              echo "Policy sync completed"
+            env:
+            - name: GIT_REPO_URL
+              valueFrom:
+                secretKeyRef:
+                  name: opa-git-config
+                  key: repo-url
+                  optional: true
+            volumeMounts:
+            - name: policies
+              mountPath: /policies
+            - name: scripts
+              mountPath: /scripts
+          volumes:
+          - name: policies
+            configMap:
+              name: opa-policies
+          - name: scripts
+            configMap:
+              name: opa-policy-updater
+              defaultMode: 0755
+          restartPolicy: OnFailure
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opa-policy-manager
+  namespace: opa-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: opa-policy-manager
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: opa-policy-manager-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: opa-policy-manager
+subjects:
+- kind: ServiceAccount
+  name: opa-policy-manager
+  namespace: opa-system
+---
+# OPA Policy Testing Framework
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-policy-tests
+  namespace: opa-system
+data:
+  authz_test.rego: |
+    package envoy.authz
+    
+    import rego.v1
+    
+    # Test authenticated user access
+    test_authenticated_user_allowed if {
+        allow with input as {
+            "attributes": {
+                "request": {
+                    "http": {
+                        "path": "/api/catalog",
+                        "method": "GET",
+                        "headers": {
+                            "authorization": "Bearer valid-jwt-token"
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    # Test unauthenticated user denied
+    test_unauthenticated_user_denied if {
+        not allow with input as {
+            "attributes": {
+                "request": {
+                    "http": {
+                        "path": "/api/catalog",
+                        "method": "GET",
+                        "headers": {}
+                    }
+                }
+            }
+        }
+    }
+    
+    # Test health check allowed
+    test_health_check_allowed if {
+        allow with input as {
+            "attributes": {
+                "request": {
+                    "http": {
+                        "path": "/health",
+                        "method": "GET",
+                        "headers": {}
+                    }
+                }
+            }
+        }
+    }
+    
+  backstage_test.rego: |
+    package backstage.authz
+    
+    import rego.v1
+    
+    # Test admin access
+    test_admin_full_access if {
+        allow with input as {
+            "user": {
+                "authenticated": true,
+                "email": "admin@company.com",
+                "groups": ["admin"]
+            },
+            "action": "delete",
+            "entity": {
+                "metadata": {
+                    "name": "test-component"
+                }
+            }
+        }
+    }
+    
+    # Test developer access to own entities
+    test_developer_own_entity if {
+        allow with input as {
+            "user": {
+                "authenticated": true,
+                "email": "dev@company.com",
+                "groups": ["developer"]
+            },
+            "action": "update",
+            "entity": {
+                "metadata": {
+                    "annotations": {
+                        "owner": "dev@company.com"
+                    }
+                }
+            }
+        }
+    }
+    
+    # Test user read access
+    test_user_read_access if {
+        allow with input as {
+            "user": {
+                "authenticated": true,
+                "email": "user@company.com",
+                "groups": ["user"]
+            },
+            "action": "read",
+            "entity": {
+                "metadata": {
+                    "name": "test-component"
+                }
+            }
+        }
+    }
+---
+# OPA Dashboard and UI
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa-dashboard
+  namespace: opa-system
+  labels:
+    app: opa-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opa-dashboard
+  template:
+    metadata:
+      labels:
+        app: opa-dashboard
+    spec:
+      containers:
+      - name: dashboard
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: dashboard-config
+          mountPath: /usr/share/nginx/html
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d
+      volumes:
+      - name: dashboard-config
+        configMap:
+          name: opa-dashboard-html
+      - name: nginx-config
+        configMap:
+          name: opa-dashboard-nginx
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-dashboard-html
+  namespace: opa-system
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>OPA Policy Dashboard</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 40px; }
+            .header { background: #007ACC; color: white; padding: 20px; }
+            .section { margin: 20px 0; padding: 20px; border: 1px solid #ddd; }
+            .policy { background: #f9f9f9; padding: 10px; margin: 10px 0; }
+            .status { padding: 5px 10px; border-radius: 3px; }
+            .active { background: #4CAF50; color: white; }
+            .inactive { background: #f44336; color: white; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>OPA Policy Dashboard</h1>
+            <p>Policy Management and Monitoring</p>
+        </div>
+        
+        <div class="section">
+            <h2>Policy Status</h2>
+            <div id="policies"></div>
+        </div>
+        
+        <div class="section">
+            <h2>Recent Decisions</h2>
+            <div id="decisions"></div>
+        </div>
+        
+        <script>
+            // Fetch OPA status and display
+            async function loadPolicyStatus() {
+                try {
+                    const response = await fetch('/api/opa/status');
+                    const data = await response.json();
+                    
+                    const policiesDiv = document.getElementById('policies');
+                    policiesDiv.innerHTML = '';
+                    
+                    if (data.bundles) {
+                        Object.keys(data.bundles).forEach(bundle => {
+                            const status = data.bundles[bundle].active ? 'active' : 'inactive';
+                            policiesDiv.innerHTML += `
+                                <div class="policy">
+                                    <strong>${bundle}</strong>
+                                    <span class="status ${status}">${status.toUpperCase()}</span>
+                                </div>
+                            `;
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error loading policy status:', error);
+                }
+            }
+            
+            // Load policy status on page load
+            loadPolicyStatus();
+            
+            // Refresh every 30 seconds
+            setInterval(loadPolicyStatus, 30000);
+        </script>
+    </body>
+    </html>
+    
+  nginx.conf: |
+    server {
+        listen 80;
+        server_name localhost;
+        
+        location / {
+            root /usr/share/nginx/html;
+            index index.html;
+        }
+        
+        location /api/opa/ {
+            proxy_pass http://opa:8181/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-dashboard-nginx
+  namespace: opa-system
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name localhost;
+        
+        location / {
+            root /usr/share/nginx/html;
+            index index.html;
+        }
+        
+        location /api/opa/ {
+            proxy_pass http://opa:8181/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opa-dashboard
+  namespace: opa-system
+  labels:
+    app: opa-dashboard
+spec:
+  selector:
+    app: opa-dashboard
+  ports:
+  - port: 80
+    targetPort: 80

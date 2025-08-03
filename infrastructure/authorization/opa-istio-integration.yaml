@@ -1,0 +1,156 @@
+# Istio Integration with OPA for External Authorization
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  name: opa-integration
+  namespace: istio-system
+spec:
+  meshConfig:
+    # Enable external authorization for the entire mesh
+    defaultConfig:
+      proxyStatsMatcher:
+        exclusionRegexps:
+        - ".*circuit_breakers.*"
+        - ".*upstream_rq_retry.*"
+        - ".*upstream_rq_pending.*"
+        - ".*_cx_.*"
+    extensionProviders:
+    - name: "opa-ext-authz"
+      envoyExtAuthzGrpc:
+        service: "opa.opa-system.svc.cluster.local"
+        port: 9191
+        timeout: 0.5s
+        includeRequestHeadersInCheck: ["authorization", "cookie"]
+        headersToUpstreamOnAllow: ["x-user-email", "x-user-groups"]
+        headersToDownstreamOnDeny: ["content-type", "www-authenticate"]
+---
+# Authorization Policy to enable OPA for specific services
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: opa-ext-authz-policy
+  namespace: istio-system
+spec:
+  # Apply to services that require OPA authorization
+  selector:
+    matchLabels:
+      opa-authz: "enabled"
+  rules:
+  - to:
+    - operation:
+        methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
+  # This policy will be overridden by the external authorization
+  action: CUSTOM
+  provider:
+    name: "opa-ext-authz"
+---
+# EnvoyFilter for detailed OPA integration
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: opa-ext-authz-filter
+  namespace: istio-system
+spec:
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND
+      listener:
+        filterChain:
+          filter:
+            name: "envoy.filters.network.http_connection_manager"
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.ext_authz
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+          transport_api_version: V3
+          with_request_body:
+            max_request_bytes: 8192
+            allow_partial_message: true
+          failure_mode_allow: false
+          grpc_service:
+            google_grpc:
+              target_uri: opa.opa-system.svc.cluster.local:9191
+              stat_prefix: ext_authz
+            timeout: 0.5s
+          authorization_request:
+            allowed_headers:
+              patterns:
+              - exact: authorization
+              - exact: cookie
+              - exact: x-forwarded-for
+              - exact: x-forwarded-proto
+              - exact: x-request-id
+          authorization_response:
+            allowed_upstream_headers:
+              patterns:
+              - exact: x-user-email
+              - exact: x-user-groups
+              - exact: x-user-id
+            allowed_client_headers:
+              patterns:
+              - exact: www-authenticate
+---
+# Service Monitor for OPA metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: opa-metrics
+  namespace: opa-system
+  labels:
+    app: opa
+spec:
+  selector:
+    matchLabels:
+      app: opa
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+---
+# NetworkPolicy for OPA
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: opa-network-policy
+  namespace: opa-system
+spec:
+  podSelector:
+    matchLabels:
+      app: opa
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from Istio sidecars
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: istio-system
+  - from:
+    - podSelector:
+        matchLabels:
+          app: istio-proxy
+  # Allow traffic from other OPA pods
+  - from:
+    - podSelector:
+        matchLabels:
+          app: opa
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow HTTPS for external policy bundles
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  # Allow access to Kubernetes API
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 6443

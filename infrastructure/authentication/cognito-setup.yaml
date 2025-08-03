@@ -1,0 +1,208 @@
+# AWS Cognito User Pool and Identity Provider Setup
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: authentication
+  labels:
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cognito-config
+  namespace: authentication
+type: Opaque
+stringData:
+  # AWS Cognito Configuration
+  user-pool-id: "us-west-2_XXXXXXXXX"  # Replace with actual User Pool ID
+  client-id: "your-cognito-client-id"   # Replace with actual Client ID
+  client-secret: "your-cognito-client-secret"  # Replace with actual Client Secret
+  region: "us-west-2"
+  domain: "your-idp-auth.auth.us-west-2.amazoncognito.com"
+  
+  # OIDC Configuration
+  issuer-url: "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_XXXXXXXXX"
+  jwks-uri: "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_XXXXXXXXX/.well-known/jwks.json"
+  
+  # Application URLs
+  callback-url: "https://backstage.idp.local/api/auth/cognito/handler/frame"
+  logout-url: "https://backstage.idp.local"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy
+  namespace: authentication
+  labels:
+    app: oauth2-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: oauth2-proxy
+  template:
+    metadata:
+      labels:
+        app: oauth2-proxy
+    spec:
+      containers:
+      - name: oauth2-proxy
+        image: quay.io/oauth2-proxy/oauth2-proxy:v7.4.0
+        args:
+        - --config=/etc/oauth2-proxy/oauth2-proxy.cfg
+        ports:
+        - containerPort: 4180
+          name: http
+        - containerPort: 8080
+          name: metrics
+        volumeMounts:
+        - name: config
+          mountPath: /etc/oauth2-proxy
+        livenessProbe:
+          httpGet:
+            path: /ping
+            port: 4180
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 4180
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: config
+        configMap:
+          name: oauth2-proxy-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oauth2-proxy-config
+  namespace: authentication
+data:
+  oauth2-proxy.cfg: |
+    # OAuth2 Proxy Configuration for AWS Cognito
+    http_address = "0.0.0.0:4180"
+    metrics_address = "0.0.0.0:8080"
+    
+    # Provider Configuration
+    provider = "oidc"
+    provider_display_name = "AWS Cognito"
+    oidc_issuer_url = "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_XXXXXXXXX"
+    
+    # Client Configuration
+    client_id = "your-cognito-client-id"
+    client_secret_file = "/etc/oauth2-proxy/client-secret"
+    
+    # Redirect URLs
+    redirect_url = "https://auth.idp.local/oauth2/callback"
+    
+    # Cookie Configuration
+    cookie_secure = true
+    cookie_httponly = true
+    cookie_samesite = "lax"
+    cookie_domains = [".idp.local"]
+    cookie_secret = "your-cookie-secret-32-chars-long"
+    
+    # Session Configuration
+    session_store_type = "redis"
+    redis_connection_url = "redis://redis.authentication.svc.cluster.local:6379"
+    
+    # Security Configuration
+    skip_provider_button = false
+    skip_auth_strip_headers = false
+    pass_authorization_header = true
+    pass_access_token = true
+    pass_user_headers = true
+    set_authorization_header = true
+    set_xauthrequest = true
+    
+    # Upstream Configuration
+    upstreams = [
+      "http://backstage.backstage.svc.cluster.local:7007/",
+      "http://argocd-server.argocd.svc.cluster.local:80/",
+      "http://grafana.monitoring.svc.cluster.local:80/"
+    ]
+    
+    # Email Domains (configure as needed)
+    email_domains = ["*"]
+    
+    # Scope Configuration
+    scope = "openid email profile"
+    
+    # Additional Headers
+    custom_templates_dir = "/etc/oauth2-proxy/templates"
+    banner = "IDP Platform Authentication"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth2-proxy
+  namespace: authentication
+  labels:
+    app: oauth2-proxy
+spec:
+  selector:
+    app: oauth2-proxy
+  ports:
+  - name: http
+    port: 4180
+    targetPort: 4180
+  - name: metrics
+    port: 8080
+    targetPort: 8080
+---
+# Redis for session storage
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: authentication
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+      volumes:
+      - name: redis-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: authentication
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379

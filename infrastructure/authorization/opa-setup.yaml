@@ -1,0 +1,388 @@
+# Open Policy Agent (OPA) Setup for IDP Platform
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: opa-system
+  labels:
+    istio-injection: enabled
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa
+  namespace: opa-system
+  labels:
+    app: opa
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: opa
+  template:
+    metadata:
+      labels:
+        app: opa
+    spec:
+      serviceAccountName: opa
+      containers:
+      - name: opa
+        image: openpolicyagent/opa:0.57.1-envoy
+        ports:
+        - containerPort: 8181
+          name: http
+        - containerPort: 9191
+          name: grpc
+        args:
+        - "run"
+        - "--server"
+        - "--config-file=/config/config.yaml"
+        - "--addr=0.0.0.0:8181"
+        - "--diagnostic-addr=0.0.0.0:8282"
+        - "--set=plugins.envoy_ext_authz_grpc.addr=:9191"
+        - "--set=plugins.envoy_ext_authz_grpc.enable_reflection=true"
+        - "--set=decision_logs.console=true"
+        - "/policies"
+        volumeMounts:
+        - name: opa-policies
+          mountPath: /policies
+        - name: opa-config
+          mountPath: /config
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8181
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health?bundle=true
+            port: 8181
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        env:
+        - name: LOG_LEVEL
+          value: "info"
+      volumes:
+      - name: opa-policies
+        configMap:
+          name: opa-policies
+      - name: opa-config
+        configMap:
+          name: opa-config
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opa
+  namespace: opa-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: opa-reader
+rules:
+- apiGroups: [""]
+  resources: ["*"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["*"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["networking.istio.io"]
+  resources: ["*"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["security.istio.io"]
+  resources: ["*"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: opa-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: opa-reader
+subjects:
+- kind: ServiceAccount
+  name: opa
+  namespace: opa-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opa
+  namespace: opa-system
+  labels:
+    app: opa
+spec:
+  selector:
+    app: opa
+  ports:
+  - name: http
+    port: 8181
+    targetPort: 8181
+  - name: grpc
+    port: 9191
+    targetPort: 9191
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-config
+  namespace: opa-system
+data:
+  config.yaml: |
+    plugins:
+      envoy_ext_authz_grpc:
+        addr: :9191
+        enable_reflection: true
+    
+    decision_logs:
+      console: true
+      
+    status:
+      console: true
+      
+    bundles:
+      authz:
+        resource: "/policies/bundle.tar.gz"
+        persist: true
+        polling:
+          min_delay_seconds: 10
+          max_delay_seconds: 20
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-policies
+  namespace: opa-system
+data:
+  # Main authorization policy
+  authz.rego: |
+    package envoy.authz
+    
+    import rego.v1
+    
+    default allow := false
+    
+    # Allow health check endpoints
+    allow if {
+        input.attributes.request.http.path in ["/health", "/healthcheck", "/ready", "/ping"]
+    }
+    
+    # Allow OAuth2 proxy endpoints
+    allow if {
+        startswith(input.attributes.request.http.path, "/oauth2/")
+    }
+    
+    # Allow authenticated users for protected resources
+    allow if {
+        is_authenticated
+        is_authorized
+    }
+    
+    # Check if user is authenticated via JWT
+    is_authenticated if {
+        auth_header := input.attributes.request.http.headers.authorization
+        startswith(auth_header, "Bearer ")
+        token := substring(auth_header, 7, -1)
+        jwt.verify_rs256(token, jwks_data)
+    }
+    
+    # Check if user is authenticated via OAuth2 proxy cookie
+    is_authenticated if {
+        cookie_header := input.attributes.request.http.headers.cookie
+        contains(cookie_header, "_oauth2_proxy=")
+    }
+    
+    # Authorization logic based on user roles and resource access
+    is_authorized if {
+        user_info := get_user_info
+        resource := input.attributes.request.http.path
+        method := input.attributes.request.http.method
+        
+        # Admin users have full access
+        user_info.groups[_] == "admin"
+    }
+    
+    is_authorized if {
+        user_info := get_user_info
+        resource := input.attributes.request.http.path
+        method := input.attributes.request.http.method
+        
+        # Developer access to development resources
+        user_info.groups[_] == "developer"
+        is_development_resource(resource)
+    }
+    
+    is_authorized if {
+        user_info := get_user_info
+        resource := input.attributes.request.http.path
+        method := input.attributes.request.http.method
+        
+        # User access to own resources
+        user_info.groups[_] == "user"
+        is_user_resource(resource, user_info.email)
+        method in ["GET", "POST"]
+    }
+    
+    # Helper functions
+    get_user_info := user_info if {
+        auth_header := input.attributes.request.http.headers.authorization
+        startswith(auth_header, "Bearer ")
+        token := substring(auth_header, 7, -1)
+        [_, payload, _] := io.jwt.decode(token)
+        user_info := payload
+    }
+    
+    is_development_resource(resource) if {
+        startswith(resource, "/api/catalog")
+    }
+    
+    is_development_resource(resource) if {
+        startswith(resource, "/api/scaffolder")
+    }
+    
+    is_development_resource(resource) if {
+        startswith(resource, "/api/techdocs")
+    }
+    
+    is_user_resource(resource, email) if {
+        # Users can access their own profile and resources
+        contains(resource, email)
+    }
+    
+    # JWKS data for JWT verification (to be updated with actual keys)
+    jwks_data := {
+        "keys": [
+            {
+                "kty": "RSA",
+                "use": "sig",
+                "kid": "example-key-id",
+                "n": "example-modulus",
+                "e": "AQAB"
+            }
+        ]
+    }
+    
+  # Service-specific policies
+  backstage.rego: |
+    package backstage.authz
+    
+    import rego.v1
+    
+    default allow := false
+    
+    # Allow all authenticated users to access Backstage
+    allow if {
+        is_authenticated
+    }
+    
+    # Admin users can manage all catalog entities
+    allow if {
+        is_authenticated
+        user_groups[_] == "admin"
+        input.action in ["create", "update", "delete"]
+    }
+    
+    # Developers can create and update their own entities
+    allow if {
+        is_authenticated
+        user_groups[_] == "developer"
+        input.action in ["create", "update"]
+        input.entity.metadata.annotations["owner"] == user_email
+    }
+    
+    # Users can read all entities
+    allow if {
+        is_authenticated
+        input.action == "read"
+    }
+    
+    is_authenticated if {
+        input.user.authenticated == true
+    }
+    
+    user_email := input.user.email
+    user_groups := input.user.groups
+    
+  # ArgoCD authorization policies
+  argocd.rego: |
+    package argocd.authz
+    
+    import rego.v1
+    
+    default allow := false
+    
+    # Admin users have full access to ArgoCD
+    allow if {
+        user_groups[_] == "admin"
+    }
+    
+    # Developers can access applications in their namespace
+    allow if {
+        user_groups[_] == "developer"
+        input.resource.kind == "applications"
+        input.resource.namespace == user_namespace
+    }
+    
+    # Developers can sync their applications
+    allow if {
+        user_groups[_] == "developer"
+        input.action == "sync"
+        input.resource.namespace == user_namespace
+    }
+    
+    # Users can view applications
+    allow if {
+        user_groups[_] == "user"
+        input.action in ["get", "list"]
+    }
+    
+    user_groups := input.user.groups
+    user_namespace := sprintf("team-%s", [input.user.team])
+    
+  # Monitoring access policies
+  monitoring.rego: |
+    package monitoring.authz
+    
+    import rego.v1
+    
+    default allow := false
+    
+    # Admin users have full access to monitoring
+    allow if {
+        user_groups[_] == "admin"
+    }
+    
+    # Developers can access monitoring for their services
+    allow if {
+        user_groups[_] == "developer"
+        is_team_metric
+    }
+    
+    # Users can view basic metrics
+    allow if {
+        user_groups[_] == "user"
+        input.action == "query"
+        is_safe_metric
+    }
+    
+    is_team_metric if {
+        team := input.user.team
+        contains(input.query, sprintf("team=\"%s\"", [team]))
+    }
+    
+    is_safe_metric if {
+        not contains(input.query, "up{")
+        not contains(input.query, "kube_")
+    }
+    
+    user_groups := input.user.groups

@@ -1,0 +1,227 @@
+# Backstage Authentication Configuration for AWS Cognito
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-auth-config
+  namespace: backstage
+data:
+  app-config.yaml: |
+    app:
+      title: IDP Platform
+      baseUrl: https://backstage.idp.local
+      
+    organization:
+      name: IDP Platform
+      
+    backend:
+      baseUrl: https://backstage.idp.local
+      listen:
+        port: 7007
+        host: 0.0.0.0
+      cors:
+        origin: https://backstage.idp.local
+        methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
+        credentials: true
+      database:
+        client: pg
+        connection:
+          host: ${POSTGRES_HOST}
+          port: ${POSTGRES_PORT}
+          user: ${POSTGRES_USER}
+          password: ${POSTGRES_PASSWORD}
+          database: ${POSTGRES_DB}
+          
+    auth:
+      # Disable guest access when using OAuth
+      environment: production
+      
+      providers:
+        oauth2Proxy:
+          development:
+            signIn:
+              resolvers:
+                - resolver: emailMatchingUserEntityName
+                - resolver: emailLocalPartMatchingUserEntityName
+                - resolver: forwardedUserMatchingUserEntityProfileEmail
+            
+        awsCognito:
+          development:
+            clientId: ${COGNITO_CLIENT_ID}
+            clientSecret: ${COGNITO_CLIENT_SECRET}
+            signInCallbackUrl: https://backstage.idp.local/api/auth/awscognito/handler/frame
+            region: us-west-2
+            userPoolId: ${COGNITO_USER_POOL_ID}
+            
+    integrations:
+      github:
+        - host: github.com
+          token: ${GITHUB_TOKEN}
+          
+    techdocs:
+      builder: 'local'
+      generator:
+        runIn: 'local'
+      publisher:
+        type: 'local'
+        
+    catalog:
+      import:
+        entityFilename: catalog-info.yaml
+        pullRequestBranchName: backstage-integration
+      rules:
+        - allow: [Component, System, API, Resource, Location, User, Group]
+      locations:
+        # Platform components
+        - type: file
+          target: ../../catalog/platform-components.yaml
+        # User and group entities
+        - type: file
+          target: ../../catalog/users-and-groups.yaml
+        # Application catalog
+        - type: file
+          target: ../../catalog/applications.yaml
+          
+    scaffolder:
+      defaultAuthor:
+        name: IDP Platform
+        email: platform@company.com
+      defaultCommitMessage: 'Initial commit from IDP Platform scaffolder'
+      
+    kubernetes:
+      serviceLocatorMethod:
+        type: 'multiTenant'
+      clusterLocatorMethods:
+        - type: 'config'
+          clusters:
+            - url: https://kubernetes.default.svc
+              name: default
+              authProvider: 'serviceAccount'
+              skipTLSVerify: true
+              skipMetricsLookup: false
+              
+    argocd:
+      username: ${ARGOCD_USERNAME}
+      password: ${ARGOCD_PASSWORD}
+      appLocatorMethods:
+        - type: 'config'
+          instances:
+            - name: argocd
+              url: https://argocd.idp.local
+              username: ${ARGOCD_USERNAME}
+              password: ${ARGOCD_PASSWORD}
+              
+    prometheus:
+      proxyPath: /prometheus/api
+      
+    grafana:
+      domain: https://grafana.idp.local
+      
+    permission:
+      enabled: true
+      
+    csp:
+      connect-src: ["'self'", 'http:', 'https:']
+      img-src: ["'self'", 'data:', 'https:']
+      
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backstage-secrets
+  namespace: backstage
+type: Opaque
+stringData:
+  # Database Configuration
+  POSTGRES_HOST: "postgresql.database.svc.cluster.local"
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: "backstage"
+  POSTGRES_PASSWORD: "backstage-password"
+  POSTGRES_DB: "backstage"
+  
+  # Cognito Configuration
+  COGNITO_CLIENT_ID: "your-cognito-client-id"
+  COGNITO_CLIENT_SECRET: "your-cognito-client-secret"
+  COGNITO_USER_POOL_ID: "us-west-2_XXXXXXXXX"
+  
+  # GitHub Integration
+  GITHUB_TOKEN: "your-github-token"
+  
+  # ArgoCD Integration
+  ARGOCD_USERNAME: "admin"
+  ARGOCD_PASSWORD: "your-argocd-admin-password"
+  
+  # Backend Secret
+  BACKEND_SECRET: "your-backend-secret-key-at-least-24-chars"
+---
+# Update Backstage deployment to use authentication
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backstage
+  namespace: backstage
+  labels:
+    app: backstage
+    auth-required: "true"  # Enable Istio auth policies
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backstage
+  template:
+    metadata:
+      labels:
+        app: backstage
+        auth-required: "true"
+    spec:
+      serviceAccountName: backstage
+      containers:
+      - name: backstage
+        image: backstage:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 7007
+        envFrom:
+        - secretRef:
+            name: backstage-secrets
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: APP_CONFIG_app_baseUrl
+          value: "https://backstage.idp.local"
+        - name: APP_CONFIG_backend_baseUrl
+          value: "https://backstage.idp.local"
+        volumeMounts:
+        - name: app-config
+          mountPath: /app/app-config.yaml
+          subPath: app-config.yaml
+        - name: ca-certs
+          mountPath: /etc/ssl/certs/ca-certificates.crt
+          subPath: ca-certificates.crt
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /healthcheck
+            port: 7007
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /healthcheck
+            port: 7007
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2
+            memory: 4Gi
+      volumes:
+      - name: app-config
+        configMap:
+          name: backstage-auth-config
+      - name: ca-certs
+        configMap:
+          name: ca-certificates

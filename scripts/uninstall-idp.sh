@@ -78,6 +78,34 @@ show_removal_plan() {
     echo
 }
 
+# Function to force delete ArgoCD applications with finalizers
+force_delete_argocd_applications() {
+    echo -e "${YELLOW}🔧 Force deleting ArgoCD applications...${NC}"
+    
+    if kubectl get namespace argocd >/dev/null 2>&1; then
+        echo -e "${BLUE}  ↪ Found ArgoCD namespace, checking for applications with finalizers${NC}"
+        
+        # Get all ArgoCD applications
+        local applications
+        applications=$(kubectl get applications -n argocd -o name 2>/dev/null || true)
+        
+        if [[ -n "$applications" ]]; then
+            echo -e "${BLUE}  ↪ Found ArgoCD applications, removing finalizers...${NC}"
+            if [[ "$DRY_RUN" == "false" ]]; then
+                # Remove finalizers from all applications
+                echo "$applications" | xargs -I {} kubectl patch {} -n argocd --type json --patch='[{"op": "remove", "path": "/metadata/finalizers"}]' 2>/dev/null || true
+                echo -e "${GREEN}  ✅ Removed finalizers from ArgoCD applications${NC}"
+            else
+                echo -e "${CYAN}  [DRY RUN] Would remove finalizers from ArgoCD applications${NC}"
+            fi
+        else
+            echo -e "${GREEN}  ✅ No ArgoCD applications found${NC}"
+        fi
+    else
+        echo -e "${GREEN}  ✅ ArgoCD namespace does not exist${NC}"
+    fi
+}
+
 # Function to remove Kubernetes namespaces
 remove_k8s_namespaces() {
     echo -e "${YELLOW}🗑️  Removing IDP Platform namespaces...${NC}"
@@ -94,6 +122,7 @@ remove_k8s_namespaces() {
         "staging"
         "production"
         "localstack"
+        "idp-system"
     )
     
     for ns in "${namespaces[@]}"; do
@@ -420,6 +449,9 @@ main() {
     echo
     
     stop_port_forwards
+    echo
+    
+    force_delete_argocd_applications
     echo
     
     remove_k8s_namespaces
