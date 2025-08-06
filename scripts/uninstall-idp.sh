@@ -112,8 +112,8 @@ remove_k8s_namespaces() {
     
     local namespaces=(
         "argocd"
+        "argo"
         "backstage" 
-        "argo-workflows"
         "istio-system"
         "crossplane-system"
         "external-secrets-system"

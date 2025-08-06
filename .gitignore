@@ -127,15 +127,19 @@ Thumbs.db
 # IDP Platform specific
 scripts/.port-forward-pids
 .env.local
+.idp-config/
+*.backup.*
+
+# External repositories (should be cloned separately)
+../idp-backstage-app/
+backstage-app-real/
 
 # Kubernetes secrets (never commit)
 *-secret.yaml
 *-credentials.yaml
 
-# Build artifacts
-backstage-app-real/backstage/dist/
-backstage-app-real/backstage/node_modules/
-backstage-app-real/backstage/packages/*/dist/
+# Downloaded/extracted tools (should be downloaded during setup)
+istio-*/
 
 # Docker
 .dockerignore

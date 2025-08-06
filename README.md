@@ -33,13 +33,13 @@ A comprehensive Kubernetes-based Integrated Developer Platform designed for web 
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/idp-platform.git
+git clone https://github.com/ayansasmal/idp-platform.git
 cd idp-platform
 
 # Setup external LocalStack (required)
 ./scripts/setup-external-localstack.sh
 
-# Start the entire platform
+# Start the entire platform (includes Backstage setup)
 ./scripts/quick-start.sh
 
 # Optional: Setup development aliases
@@ -47,6 +47,22 @@ cd idp-platform
 ```
 
 **That's it!** Your IDP platform will be running with all services accessible via browser.
+
+### What happens during startup:
+
+1. **Configuration Check**: Loads and validates platform configuration
+2. **Platform Health Check**: Validates prerequisites and dependencies
+3. **External Backstage Setup**: Automatically clones, builds, and integrates the separate Backstage repository
+4. **Service Startup**: Launches all platform services via intelligent discovery
+5. **Data Protection**: Applies security policies if enabled
+6. **Integration**: Connects Backstage with platform services and deploys via ArgoCD
+
+**Note**: The Backstage application is maintained in a separate GitHub repository for independent development while seamlessly integrating with the platform.
+
+### First-time setup:
+1. **Backstage Repository**: Already configured to use [idp-backstage-app](https://github.com/ayansasmal/idp-backstage-app)
+2. **Optional Setup Wizard**: Run `./scripts/idp-setup-wizard.sh` for advanced configuration
+3. **Custom Repository**: Use `./scripts/configure-backstage-repo.sh YOUR_REPO_URL` to change Backstage repository
 
 ## 📊 Access Your Services
 

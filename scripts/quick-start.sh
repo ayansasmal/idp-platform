@@ -16,6 +16,11 @@ NC='\033[0m'
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Load IDP configuration if available
+if [ -f "$SCRIPT_DIR/config-parser.sh" ]; then
+    source "$SCRIPT_DIR/config-parser.sh" export 2>/dev/null || true
+fi
+
 echo -e "${BLUE}"
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║                    IDP Platform Quick Start                 ║"
@@ -24,8 +29,37 @@ echo "║  🚀 Starting your Integrated Developer Platform...          ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
-# Step 1: Health Check
-echo -e "${PURPLE}[1/4]${NC} ${BLUE}Performing platform health check...${NC}"
+# Step 1: Configuration Check
+echo -e "${PURPLE}[1/6]${NC} ${BLUE}Checking platform configuration...${NC}"
+
+# Check if configuration exists
+if [ -f "$SCRIPT_DIR/config-parser.sh" ] && [ -f "$(dirname "$SCRIPT_DIR")/.idp-config/idp-config.yaml" ]; then
+    echo -e "${GREEN}✓ IDP configuration found${NC}"
+    
+    # Show configuration summary
+    if [ "${SHOW_CONFIG:-true}" = "true" ]; then
+        echo -e "${BLUE}Configuration Summary:${NC}"
+        echo -e "  • Platform Mode: ${GREEN}${IDP_PLATFORM_MODE:-Default}${NC}"
+        echo -e "  • Data Protection: ${GREEN}$([ "$IDP_DATA_PROTECTION_ENABLED" = true ] && echo "Enabled" || echo "Disabled")${NC}"
+        echo -e "  • External Registry: ${GREEN}$([ "$IDP_EXTERNAL_REGISTRY_ENABLED" = true ] && echo "$IDP_REGISTRY_TYPE" || echo "LocalStack ECR")${NC}"
+        echo -e "  • External Auth: ${GREEN}$([ "$IDP_EXTERNAL_AUTH_ENABLED" = true ] && echo "$IDP_AUTH_PROVIDER" || echo "LocalStack Cognito")${NC}"
+    fi
+    
+    # Validate configuration
+    if ! "$SCRIPT_DIR/config-parser.sh" validate > /dev/null 2>&1; then
+        echo -e "${YELLOW}⚠ Configuration validation warnings detected${NC}"
+        echo -e "${BLUE}Run './scripts/config-parser.sh show' to review configuration${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠ No configuration found${NC}"
+    echo -e "${BLUE}💡 You can run './scripts/idp-setup-wizard.sh' to create a custom configuration${NC}"
+    echo -e "${BLUE}   Proceeding with default settings...${NC}"
+fi
+
+echo ""
+
+# Step 2: Health Check
+echo -e "${PURPLE}[2/6]${NC} ${BLUE}Performing platform health check...${NC}"
 if ! "$SCRIPT_DIR/start-platform.sh" health; then
     echo -e "${RED}Health check failed. Please fix the issues above before continuing.${NC}"
     exit 1
@@ -33,8 +67,26 @@ fi
 
 echo -e "\n${GREEN}✓ Platform health check passed${NC}\n"
 
-# Step 2: Start Services
-echo -e "${PURPLE}[2/4]${NC} ${BLUE}Starting all platform services...${NC}"
+# Step 3: Setup External Backstage (if needed)
+echo -e "${PURPLE}[3/6]${NC} ${BLUE}Setting up external Backstage integration...${NC}"
+
+# Check if we need to setup external Backstage
+if [ "${SETUP_BACKSTAGE:-true}" = "true" ]; then
+    if [ -f "$SCRIPT_DIR/setup-backstage-external.sh" ]; then
+        echo -e "${BLUE}Setting up external Backstage repository...${NC}"
+        "$SCRIPT_DIR/setup-backstage-external.sh"
+        echo -e "${GREEN}✓ External Backstage setup completed${NC}"
+    else
+        echo -e "${YELLOW}⚠ External Backstage setup script not found, skipping...${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠ External Backstage setup skipped (SETUP_BACKSTAGE=false)${NC}"
+fi
+
+echo ""
+
+# Step 4: Start Services
+echo -e "${PURPLE}[4/6]${NC} ${BLUE}Starting all platform services...${NC}"
 
 # Start in smart mode (only available services) in background
 "$SCRIPT_DIR/start-platform.sh" smart &
@@ -43,8 +95,8 @@ PLATFORM_PID=$!
 # Wait a bit for services to start
 sleep 5
 
-# Step 3: Wait for services to be ready
-echo -e "\n${PURPLE}[3/4]${NC} ${BLUE}Waiting for services to be ready...${NC}"
+# Step 5: Wait for services to be ready
+echo -e "\n${PURPLE}[5/6]${NC} ${BLUE}Waiting for services to be ready...${NC}"
 
 # Function to check if a port is open
 check_port() {
@@ -70,8 +122,8 @@ check_port() {
 # and only starts available services, so we don't need to hardcode checks here
 echo -e "${GREEN}✓ Services started using intelligent discovery${NC}"
 
-# Step 4: Show access information
-echo -e "\n${PURPLE}[4/4]${NC} ${BLUE}Platform is ready!${NC}"
+# Step 6: Show access information
+echo -e "\n${PURPLE}[6/6]${NC} ${BLUE}Platform is ready!${NC}"
 
 echo -e "\n${GREEN}🎉 Your IDP Platform is now running!${NC}\n"
 

@@ -9,11 +9,11 @@ spec:
   arguments:
     parameters:
     - name: repo-url
-      value: "https://github.com/ayansasmal/idp-platform"
+      value: "https://github.com/ayansasmal/idp-backstage-app"
     - name: branch
       value: "main"
     - name: image-name
-      value: "backstage-app-real"
+      value: "idp/backstage-app"
     - name: image-tag
       value: "stable-v1.0"
 
@@ -42,10 +42,10 @@ spec:
           cd /workspace
           git checkout {{workflow.parameters.branch}}
           echo "✅ Repository cloned successfully"
-          echo "📁 Checking backstage-app-real structure:"
-          ls -la /workspace/backstage-app-real/backstage/
-          echo "📄 Dockerfile.prebuilt exists:"
-          ls -la /workspace/backstage-app-real/backstage/Dockerfile.prebuilt
+          echo "📁 Checking Backstage project structure:"
+          ls -la /workspace/
+          echo "📄 Checking for Dockerfile:"
+          ls -la /workspace/Dockerfile* || echo "No Dockerfile found"
       volumeMounts:
       - name: workspace
         mountPath: /workspace
@@ -58,8 +58,8 @@ spec:
       image: gcr.io/kaniko-project/executor:debug
       command: ["/kaniko/executor"]
       args:
-        - "--dockerfile=/workspace/backstage-app-real/backstage/Dockerfile.prebuilt"
-        - "--context=/workspace/backstage-app-real/backstage"
+        - "--dockerfile=/workspace/Dockerfile"
+        - "--context=/workspace"
         - "--destination=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:{{workflow.parameters.image-tag}}"
         - "--destination=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:build-{{workflow.uid}}"
         - "--insecure"
