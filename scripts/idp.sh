@@ -165,8 +165,36 @@ setup_platform() {
         
         # Trigger sync of platform applications
         print_status "Syncing platform applications..."
-        sleep 5  # Wait for applications to be created
-        for app in monitoring-platform backstage-platform workflow-templates argocd-ui; do
+        sleep 10  # Wait for applications to be created
+        
+        # Handle Argo Workflows deployment conflicts (common issue)
+        print_status "Resolving potential Argo Workflows deployment conflicts..."
+        # Remove any existing conflicting deployments that might have immutable fields
+        kubectl delete deployment argo-workflows-server argo-workflows-workflow-controller -n argo-workflows --ignore-not-found=true
+        kubectl delete configmap workflow-controller-configmap -n argo-workflows --ignore-not-found=true
+        
+        # Sync core applications first
+        for app in monitoring-platform argocd-ui; do
+            kubectl patch application $app -n argocd -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' --type merge 2>/dev/null || true
+        done
+        
+        # Force sync Argo Workflows with clean slate
+        kubectl patch application argo-workflows -n argocd -p '{"spec":{"syncPolicy":null}}' --type merge 2>/dev/null || true
+        kubectl patch application argo-workflows -n argocd -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"syncStrategy":{"hook":{},"apply":{"force":true}}}}}' --type merge 2>/dev/null || true
+        
+        # Wait for Argo Workflows to be ready before deploying templates
+        print_status "Waiting for Argo Workflows to be ready..."
+        kubectl wait --for=condition=Available deployment/argo-workflows-server -n argo-workflows --timeout=120s || print_warning "Argo Workflows server not ready"
+        
+        # Deploy workflow templates using dedicated script (more reliable than ArgoCD app)
+        if [ -f "$SCRIPT_DIR/deploy-workflow-templates.sh" ]; then
+            "$SCRIPT_DIR/deploy-workflow-templates.sh" || print_warning "Some workflow templates failed to deploy"
+        else
+            print_warning "Workflow templates deployment script not found"
+        fi
+        
+        # Sync remaining applications
+        for app in backstage-platform; do
             kubectl patch application $app -n argocd -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' --type merge 2>/dev/null || true
         done
     else
@@ -438,7 +466,8 @@ show_usage() {
     echo -e "  ${GREEN}config${NC}          Run configuration wizard"
     echo -e ""
     echo -e "${PURPLE}Application Management Commands:${NC}"
-    echo -e "  ${GREEN}build-backstage${NC} Build Backstage app using IDP workflows"
+    echo -e "  ${GREEN}build-backstage${NC}     Build Backstage app using IDP workflows"
+    echo -e "  ${GREEN}deploy-templates${NC}    Deploy/redeploy Argo Workflows templates"
     echo -e ""
     echo -e "${PURPLE}Credential Management Commands:${NC} ${CYAN}[NEW]${NC}"
     echo -e "  ${GREEN}credentials${NC} [setup|apply|generate]  Interactive credential setup and management"
@@ -459,7 +488,8 @@ show_usage() {
     echo -e "  $0 update istio-config --version 1.20.1 --dry-run  # Dry run update"
     echo -e "  $0 rollback monitoring-stack --steps 1     # Rollback monitoring 1 step"
     echo -e "  $0 status monitoring-stack                  # Check specific component status"
-    echo -e "  $0 build-backstage                          # Build and deploy Backstage\n"
+    echo -e "  $0 build-backstage                          # Build and deploy Backstage"
+    echo -e "  $0 deploy-templates                         # Deploy Argo Workflows templates\n"
 }
 
 # Cleanup function
@@ -778,6 +808,14 @@ case "${1:-help}" in
         ;;
     "build-backstage")
         build_backstage
+        ;;
+    "deploy-templates")
+        if [ -f "$SCRIPT_DIR/deploy-workflow-templates.sh" ]; then
+            "$SCRIPT_DIR/deploy-workflow-templates.sh"
+        else
+            print_error "Workflow templates deployment script not found"
+            exit 1
+        fi
         ;;
     "config")
         "$SCRIPT_DIR/idp-setup-wizard.sh"
