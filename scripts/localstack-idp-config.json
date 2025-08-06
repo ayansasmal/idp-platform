@@ -1,0 +1,31 @@
+{
+  "services": {
+    "cognito-idp": {
+      "endpoint_url": "http://localhost:4566",
+      "region": "us-east-1"
+    },
+    "rds": {
+      "endpoint_url": "http://localhost:4566",
+      "region": "us-east-1"
+    },
+    "s3": {
+      "endpoint_url": "http://localhost:4566",
+      "region": "us-east-1",
+      "path_style": true
+    },
+    "secretsmanager": {
+      "endpoint_url": "http://localhost:4566",
+      "region": "us-east-1"
+    },
+    "iam": {
+      "endpoint_url": "http://localhost:4566",
+      "region": "us-east-1"
+    },
+    "ecr": {
+      "endpoint_url": "http://localhost:4566",
+      "region": "us-east-1"
+    }
+  },
+  "hostname_external": "localhost.localstack.cloud",
+  "cognito_idp_issuer": "http://localhost.localstack.cloud:4566"
+}

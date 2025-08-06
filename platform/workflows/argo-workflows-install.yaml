@@ -101,22 +101,20 @@ metadata:
 data:
   config: |
     # Base configuration for Argo Workflows controller
-    containerRuntimeExecutor: docker
+    executor:
+      imagePullPolicy: IfNotPresent
     artifactRepository:
       archiveLogs: true
-    persistence:
-      archive: true
-      postgresql:
-        host: localhost
-        port: 5432
-        database: argo
-        tableName: argo_workflows
-        userNameSecret:
-          name: argo-postgres-config
-          key: username
-        passwordSecret:
-          name: argo-postgres-config
-          key: password
+      s3:
+        bucket: argo-artifacts
+        endpoint: localhost:4566
+        insecure: true
+        accessKeySecret:
+          name: argo-artifacts
+          key: accesskey
+        secretKeySecret:
+          name: argo-artifacts
+          key: secretkey
     workflowDefaults:
       spec:
         ttlStrategy:

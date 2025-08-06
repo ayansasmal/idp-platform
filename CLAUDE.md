@@ -71,22 +71,26 @@ High-level abstraction that generates:
 git clone https://github.com/your-org/idp-platform.git
 cd idp-platform
 
-# 2. One-time setup
-./scripts/dev-setup.sh
+# 2. One-time setup and start
+./scripts/idp.sh setup
 
-# 3. Start platform
-./scripts/quick-start.sh
+# 3. Start platform services
+./scripts/idp.sh start
 
-# That's it! Platform is running with all services accessible
+# That's it! Complete platform is running with all services accessible
 ```
 
 ### Access Your Platform
 
 All services are automatically accessible:
-- **ArgoCD**: http://localhost:8080 (admin / [get password])
+- **ArgoCD**: https://localhost:8080 (admin / [get password from output])
 - **Backstage**: http://localhost:3000 (Developer portal)
 - **Grafana**: http://localhost:3001 (admin / admin)
-- **Complete monitoring stack**: All auto-forwarded
+- **Prometheus**: http://localhost:9090 (Metrics collection)
+- **Jaeger**: http://localhost:16686 (Distributed tracing)
+- **Kiali**: http://localhost:20001 (Service mesh observability)
+- **Argo Workflows**: http://localhost:4000 (CI/CD workflows)
+- **Monitoring Dashboard**: http://localhost:3002 (Observability overview)
 
 The platform is now production-ready with comprehensive automation! 🎉
 

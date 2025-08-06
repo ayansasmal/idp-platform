@@ -106,7 +106,24 @@ setup_platform() {
         print_warning "LocalStack setup script not found, skipping..."
     fi
     
-    # Deploy ArgoCD first
+    # Install Istio service mesh first (required for platform)
+    print_status "Installing Istio service mesh..."
+    if [ -d "$ROOT_DIR/istio-1.26.3" ]; then
+        "$ROOT_DIR/istio-1.26.3/bin/istioctl" install --set values.defaultRevision=default -y
+        print_success "Istio service mesh installed"
+        
+        # Install observability addons (Prometheus, Grafana, Jaeger, Kiali)
+        print_status "Installing Istio observability addons..."
+        kubectl apply -f "$ROOT_DIR/istio-1.26.3/samples/addons/" || {
+            print_warning "Some addons failed to install, but continuing..."
+        }
+        print_success "Istio observability addons installed"
+    else
+        print_error "Istio installation directory not found. Please ensure Istio 1.26.3 is available."
+        return 1
+    fi
+    
+    # Deploy ArgoCD
     print_status "Deploying ArgoCD..."
     kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
     kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
@@ -121,6 +138,12 @@ setup_platform() {
     print_status "Deploying Argo Workflows..."
     if kubectl apply -f "$ROOT_DIR/platform/workflows/argo-workflows-install.yaml"; then
         print_success "Argo Workflows deployed successfully"
+        
+        # Setup S3 artifacts for Argo Workflows (if script exists)
+        if [ -f "$SCRIPT_DIR/setup-argo-artifacts.sh" ]; then
+            print_status "Setting up Argo Workflows S3 artifacts..."
+            "$SCRIPT_DIR/setup-argo-artifacts.sh" || print_warning "Failed to setup S3 artifacts"
+        fi
     else
         print_error "Failed to deploy Argo Workflows"
         return 1
@@ -134,6 +157,28 @@ setup_platform() {
         }
     else
         print_warning "GitOps applications not found, skipping..."
+    fi
+    
+    # Deploy platform services (monitoring, backstage, etc.)
+    if [ -f "$ROOT_DIR/applications/platform-services-apps.yaml" ]; then
+        print_status "Deploying platform services (monitoring, backstage, workflows)..."
+        kubectl apply -f "$ROOT_DIR/applications/platform-services-apps.yaml" || {
+            print_warning "Failed to deploy platform services, but continuing..."
+        }
+        
+        # Wait for Istio addons to be ready
+        print_status "Waiting for observability services to be ready..."
+        kubectl wait --for=condition=Available deployment/grafana -n istio-system --timeout=120s || print_warning "Grafana not ready"
+        kubectl wait --for=condition=Available deployment/prometheus -n istio-system --timeout=120s || print_warning "Prometheus not ready"
+        
+        # Trigger sync of platform applications
+        print_status "Syncing platform applications..."
+        sleep 5  # Wait for applications to be created
+        for app in monitoring-platform backstage-platform workflow-templates argocd-ui; do
+            kubectl patch application $app -n argocd -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' --type merge 2>/dev/null || true
+        done
+    else
+        print_warning "Platform services applications not found, skipping..."
     fi
     
     print_success "Platform setup completed"
@@ -266,16 +311,17 @@ EOF
 start_services() {
     print_header "Starting Platform Services"
     
-    # Service port-forward configurations
-    declare -A SERVICES=(
-        ["argocd"]="argocd:argocd-server:8080:443"
-        ["backstage"]="backstage:backstage:3000:80"
-        ["workflows"]="argo-workflows:argo-workflows-server:4000:2746"
-        ["grafana"]="istio-system:grafana:3001:3000"
-        ["prometheus"]="istio-system:prometheus:9090:9090"
-        ["jaeger"]="istio-system:tracing:16686:80"
-        ["kiali"]="istio-system:kiali:20001:20001"
-    )
+    # Service port-forward configurations (using simple approach for sh compatibility)
+    SERVICES_LIST="
+argocd:argocd:argocd-server:8080:443
+backstage:backstage:backstage:3000:80
+workflows:argo-workflows:argo-workflows-server:4000:2746
+grafana:istio-system:grafana:3001:3000
+prometheus:istio-system:prometheus:9090:9090
+jaeger:istio-system:tracing:16686:80
+kiali:istio-system:kiali:20001:20001
+monitoring:istio-system:monitoring-dashboard:3002:80
+"
     
     local pids_file="$SCRIPT_DIR/.port-forward-pids"
     
@@ -290,8 +336,9 @@ start_services() {
     
     print_status "Starting port forwards for available services..."
     
-    for service_name in "${!SERVICES[@]}"; do
-        IFS=':' read -r namespace svc local_port remote_port <<< "${SERVICES[$service_name]}"
+    echo "$SERVICES_LIST" | while IFS=':' read -r service_name namespace svc local_port remote_port; do
+        # Skip empty lines
+        [ -z "$service_name" ] && continue
         
         # Check if service exists
         if kubectl get namespace "$namespace" &> /dev/null && \
@@ -320,10 +367,14 @@ start_services() {
     echo -e "${GREEN}🎉 IDP Platform is running!${NC}\n"
     
     echo -e "${BLUE}🔗 Available Services:${NC}"
-    echo -e "  • ArgoCD (GitOps):         ${YELLOW}http://localhost:8080${NC}"
+    echo -e "  • ArgoCD (GitOps):         ${YELLOW}https://localhost:8080${NC}"
     echo -e "  • Backstage (Portal):      ${YELLOW}http://localhost:3000${NC}"
     echo -e "  • Argo Workflows (CI/CD):  ${YELLOW}http://localhost:4000${NC}"
-    echo -e "  • Grafana (Monitoring):    ${YELLOW}http://localhost:3001${NC}\n"
+    echo -e "  • Grafana (Monitoring):    ${YELLOW}http://localhost:3001${NC}"
+    echo -e "  • Prometheus (Metrics):    ${YELLOW}http://localhost:9090${NC}"
+    echo -e "  • Jaeger (Tracing):        ${YELLOW}http://localhost:16686${NC}"
+    echo -e "  • Kiali (Service Mesh):    ${YELLOW}http://localhost:20001${NC}"
+    echo -e "  • Monitoring Dashboard:    ${YELLOW}http://localhost:3002${NC}\n"
     
     echo -e "${BLUE}🔐 Default Credentials:${NC}"
     echo -e "  • ArgoCD: admin / $(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d 2>/dev/null || echo 'admin')"
