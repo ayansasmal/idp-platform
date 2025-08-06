@@ -134,19 +134,11 @@ setup_platform() {
         print_warning "ArgoCD deployment timeout, but continuing..."
     }
     
-    # Deploy Argo Workflows for CI/CD
-    print_status "Deploying Argo Workflows..."
-    if kubectl apply -f "$ROOT_DIR/platform/workflows/argo-workflows-install.yaml"; then
-        print_success "Argo Workflows deployed successfully"
-        
-        # Setup S3 artifacts for Argo Workflows (if script exists)
-        if [ -f "$SCRIPT_DIR/setup-argo-artifacts.sh" ]; then
-            print_status "Setting up Argo Workflows S3 artifacts..."
-            "$SCRIPT_DIR/setup-argo-artifacts.sh" || print_warning "Failed to setup S3 artifacts"
-        fi
-    else
-        print_error "Failed to deploy Argo Workflows"
-        return 1
+    # Note: Argo Workflows will be deployed via ArgoCD application (Helm chart)
+    # Setup S3 artifacts for Argo Workflows (if script exists)
+    if [ -f "$SCRIPT_DIR/setup-argo-artifacts.sh" ]; then
+        print_status "Setting up Argo Workflows S3 artifacts..."
+        "$SCRIPT_DIR/setup-argo-artifacts.sh" || print_warning "Failed to setup S3 artifacts"
     fi
     
     # Apply GitOps applications (if they exist)
