@@ -1,66 +1,143 @@
-# Integrated Developer Platform (IDP) Architecture
+# CLAUDE.md
 
-## Overview
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-This document outlines the complete architecture and implementation of a production-ready Kubernetes-based Integrated Developer Platform (IDP) designed primarily for web applications with future extensibility for IoT projects.
+## Project Overview
 
-**Current Status: ✅ PRODUCTION READY** - All 6 phases completed with automation scripts and comprehensive observability.
+This is a production-ready Kubernetes-based Integrated Developer Platform (IDP) designed for web applications with future IoT extensibility. The platform implements GitOps principles with comprehensive automation, service mesh, and developer self-service capabilities.
+
+**Current Status: ✅ PRODUCTION READY** - All core phases completed with advanced multi-instance capabilities and comprehensive automation.
+
+## Repository Structure
+
+**Two Independent GitHub Repositories:**
+- **[idp-platform](https://github.com/ayansasmal/idp-platform)** - Core platform infrastructure, GitOps configurations, scripts
+- **[idp-backstage-app](https://github.com/ayansasmal/idp-backstage-app)** - Backstage developer portal application
+
+## Quick Platform Setup
+
+```bash
+# Clone and start the platform (one command!)
+git clone https://github.com/ayansasmal/idp-platform.git
+cd idp-platform
+./scripts/idp.sh setup
+# Platform automatically handles Backstage integration
+```
+
+## Development Policies
+
+- Always update claude.md with any changes to the state, structure, features, functionalities of the IDP
+
+## Common Development Commands
+
+### Platform Management
+```bash
+# Platform setup and configuration
+./scripts/idp-setup-wizard.sh       # Interactive setup wizard for platform configuration
+./scripts/config-parser.sh show     # Display current platform configuration
+./scripts/config-parser.sh validate # Validate platform configuration
+
+# Start entire platform (primary command) - now includes configuration check
+./scripts/idp.sh setup
+
+# Platform lifecycle management  
+./scripts/idp.sh start               # Start all services with port-forwards
+./scripts/idp.sh stop                # Stop all services
+./scripts/idp.sh restart             # Restart platform services
+./scripts/idp.sh status              # Check platform status
+./scripts/idp.sh config              # Run configuration wizard
+
+# Advanced commands
+./scripts/idp.sh build-backstage     # Build Backstage app using IDP workflows
+./scripts/idp.sh deploy-templates    # Deploy/redeploy Argo Workflows templates
+
+# Setup and teardown
+./scripts/dev-setup.sh               # One-time development environment setup
+./scripts/setup-external-localstack.sh  # Setup LocalStack for AWS emulation
+./scripts/setup-backstage-external.sh   # Setup external Backstage integration
+./scripts/apply-data-protection.sh   # Apply data loss protection policies
+./scripts/uninstall-idp.sh           # Complete platform removal
+
+# Configuration management
+export SHOW_CONFIG=false            # Skip configuration summary in idp.sh setup
+export SETUP_BACKSTAGE=false        # Skip Backstage setup during platform startup
+```
+
+### Version Management Commands
+```bash
+# Component versioning and rollback capabilities
+./scripts/idp.sh versions           # List versions for all components
+./scripts/idp.sh versions <comp>    # List versions for specific component
+./scripts/idp.sh update <comp> --version <ver> [--dry-run]  # Update component version
+./scripts/idp.sh rollback <comp> [--steps <n>]              # Rollback component
+
+# Multi-Instance Management
+./scripts/idp.sh instances list     # List all IDP instances
+./scripts/idp.sh instances create <env>  # Create new IDP instance
+./scripts/idp.sh instances promote <source> <target>  # Promote between instances
+```
+
+### Credential Management
+```bash
+# Interactive credential setup and management
+./scripts/idp.sh credentials setup  # Interactive credential configuration
+./scripts/idp.sh credentials apply  # Apply credential configurations
+./scripts/idp.sh credentials generate  # Generate credentials only
+```
 
 ## Architecture Components
 
 ### Core Infrastructure Stack
 
-- **Kubernetes**: Container orchestration platform
-- **Crossplane**: Infrastructure as Code and multi-cloud management
-- **Istio/Envoy**: Service mesh for traffic management, security, and observability
-- **ArgoCD**: GitOps-based continuous deployment
-- **LocalStack**: Local AWS service emulation for development
+- **Kubernetes**: Container orchestration (Docker Desktop/Kind/Minikube)
+- **ArgoCD**: GitOps-based continuous deployment at localhost:8080
+- **Backstage**: Developer portal and service catalog at localhost:3000
+- **Istio**: Service mesh for traffic management, security (mTLS), observability
+- **External LocalStack**: AWS service emulation (Cognito, ECR, RDS, Secrets Manager)
+- **Crossplane**: Infrastructure as Code with hybrid LocalStack/AWS providers
+- **External Secrets Operator**: Kubernetes secrets management
+- **Argo Workflows**: Kubernetes-native CI for container builds
 
-### Container Registry
-
-- **AWS ECR**: Production container registry
-- **LocalStack ECR**: Local development container registry
-- Unified workflow across environments
-
-### CI/CD Pipeline
-
-- **GitHub Actions**: Continuous Integration (build, test, security scans)
-- **ArgoCD**: GitOps-based Continuous Deployment
-- **Container Build**: Multi-stage Docker builds pushed to ECR
-
-### Secrets Management
-
-- **External Secrets Operator (ESO)**: Kubernetes secrets synchronization
-- **AWS Secrets Manager**: Production secrets backend
-- **LocalStack Secrets**: Local development secrets
-- **cert-manager**: Certificate lifecycle management
-- **Istio mTLS**: Service-to-service encryption
-
-### Developer Experience
-
-- **Backstage**: Developer portal and service catalog
-- **Custom CRDs**: Platform abstractions (WebApplication, etc.)
-- **Software Templates**: Self-service application scaffolding
-- **Multi-environment**: Seamless local to production workflows
-
-## Platform Abstractions
-
-### WebApplication CRD
-
-High-level abstraction that generates:
-
-- Kubernetes Deployment manifests
-- Service definitions
-- Istio VirtualService/Gateway configurations
+### Platform Abstractions
+The platform's primary abstraction is the **WebApplication CRD** (`platform/crds/webapplication-crd.yaml`) which automatically generates:
+- Kubernetes Deployments and Services
+- Istio VirtualService and Gateway configurations  
 - HorizontalPodAutoscaler settings
 - Crossplane resource claims (databases, storage)
 
-### Environment Strategy
+### Multi-Instance Architecture (NEW)
+- **IDPInstance CRD**: Manages multiple environment instances (dev/staging/prod)
+- **InstancePromotion CRD**: Handles cross-environment deployments with validation
+- **Instance Controller**: Automated lifecycle management and health monitoring
+- **Cross-Instance Communication**: Service discovery and secrets synchronization
 
-- **Local Development**: LocalStack + Kind/Minikube
+### Directory Structure
+- `applications/`: ArgoCD applications and GitOps configurations
+- `infrastructure/`: Core platform infrastructure (Istio, auth, etc.)
+- `platform/`: Custom CRDs, operators, workflows, and backend services
+- `platform/multi-instance/`: Multi-instance management components (NEW)
+- `scripts/`: Automation scripts for platform lifecycle management
+- `docs/`: Comprehensive architecture and implementation documentation
+
+### External Repositories
+- `../idp-backstage-app/`: Separate Backstage application repository (TypeScript/Node.js)
+  - Automatically cloned and integrated by platform scripts
+  - Independent development and versioning
+  - Built and deployed via platform automation
+
+### Environment Strategy
+- **Local Development**: LocalStack + Kubernetes (Docker Desktop/Kind)
 - **Staging**: AWS with reduced resources
 - **Production**: Full AWS infrastructure
-- **GitOps**: Same configurations, different targets
+- **Multi-Instance**: Automated promotion workflows between environments
+- **Consistency**: Same GitOps configurations across all environments
+
+### Authentication & Security
+- **AWS Cognito**: Centralized OAuth/OIDC authentication for all services
+- **Test Accounts**: admin/TempPassword123!, developer/TempPassword123!
+- **Istio mTLS**: Service-to-service encryption
+- **JWT Validation**: Token-based API security
+- **cert-manager**: Automatic certificate lifecycle management
 
 ## Getting Started
 

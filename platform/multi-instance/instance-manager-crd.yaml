@@ -1,0 +1,260 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: idpinstances.platform.idp.io
+spec:
+  group: platform.idp.io
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              environment:
+                type: string
+                enum: ["development", "staging", "production"]
+              cluster:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum: ["kind", "minikube", "docker-desktop", "eks", "gke", "aks"]
+                  context:
+                    type: string
+                  endpoint:
+                    type: string
+                required: ["type", "context"]
+              namespace:
+                type: string
+                default: "idp-platform"
+              domain:
+                type: string
+              resources:
+                type: object
+                properties:
+                  limits:
+                    type: object
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
+                      storage:
+                        type: string
+              features:
+                type: object
+                properties:
+                  localstack:
+                    type: boolean
+                    default: false
+                  istio:
+                    type: boolean
+                    default: true
+                  monitoring:
+                    type: boolean
+                    default: true
+                  security_scanning:
+                    type: boolean
+                    default: false
+                  compliance_scanning:
+                    type: boolean
+                    default: false
+              promotion:
+                type: object
+                properties:
+                  target:
+                    type: string
+                    nullable: true
+                  auto_promote:
+                    type: boolean
+                    default: false
+                  approval_required:
+                    type: boolean
+                    default: true
+                  conditions:
+                    type: array
+                    items:
+                      type: string
+            required: ["environment", "cluster", "domain"]
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+                enum: ["Pending", "Installing", "Ready", "Updating", "Failed"]
+              conditions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+                    lastTransitionTime:
+                      type: string
+                      format: date-time
+                    reason:
+                      type: string
+                    message:
+                      type: string
+              lastPromotionTime:
+                type: string
+                format: date-time
+              version:
+                type: string
+              healthStatus:
+                type: object
+                properties:
+                  overall:
+                    type: string
+                    enum: ["Healthy", "Degraded", "Progressing", "Suspended", "Unknown"]
+                  components:
+                    type: object
+                    additionalProperties:
+                      type: string
+    additionalPrinterColumns:
+    - name: Environment
+      type: string
+      jsonPath: .spec.environment
+    - name: Cluster
+      type: string
+      jsonPath: .spec.cluster.type
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Health
+      type: string
+      jsonPath: .status.healthStatus.overall
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: idpinstances
+    singular: idpinstance
+    kind: IDPInstance
+    shortNames:
+    - idp
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: instancepromotions.platform.idp.io
+spec:
+  group: platform.idp.io
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              sourceInstance:
+                type: string
+              targetInstance:
+                type: string
+              components:
+                type: array
+                items:
+                  type: string
+                default: ["all"]
+              strategy:
+                type: string
+                enum: ["blue-green", "rolling", "canary"]
+                default: "blue-green"
+              validationSteps:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    type:
+                      type: string
+                      enum: ["health-check", "security-scan", "integration-test", "manual-approval"]
+                    timeout:
+                      type: string
+                      default: "300s"
+                    required:
+                      type: boolean
+                      default: true
+            required: ["sourceInstance", "targetInstance"]
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+                enum: ["Pending", "Validating", "Deploying", "Verifying", "Completed", "Failed", "Cancelled"]
+              startTime:
+                type: string
+                format: date-time
+              completionTime:
+                type: string
+                format: date-time
+              conditions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+                    lastTransitionTime:
+                      type: string
+                      format: date-time
+                    reason:
+                      type: string
+                    message:
+                      type: string
+              validationResults:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    step:
+                      type: string
+                    status:
+                      type: string
+                      enum: ["Passed", "Failed", "Skipped", "Running"]
+                    message:
+                      type: string
+              rollbackPlan:
+                type: object
+                properties:
+                  available:
+                    type: boolean
+                  strategy:
+                    type: string
+                  estimatedTime:
+                    type: string
+    additionalPrinterColumns:
+    - name: Source
+      type: string
+      jsonPath: .spec.sourceInstance
+    - name: Target
+      type: string
+      jsonPath: .spec.targetInstance
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: instancepromotions
+    singular: instancepromotion
+    kind: InstancePromotion
+    shortNames:
+    - promote

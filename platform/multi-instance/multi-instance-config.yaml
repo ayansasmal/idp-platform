@@ -1,0 +1,120 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: multi-instance-config
+  namespace: idp-platform
+data:
+  instances.yaml: |
+    spec:
+      environments:
+        development:
+          name: "IDP Development"
+          cluster:
+            type: "kind" # kind, minikube, docker-desktop
+            context: "kind-idp-dev"
+          namespace: "idp-dev"
+          domain: "dev.idp.localhost"
+          resources:
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+              storage: "10Gi"
+          features:
+            localstack: true
+            istio: true
+            monitoring: true
+            security_scanning: false
+          promotion:
+            target: "staging"
+            auto_promote: false
+            approval_required: false
+          
+        staging:
+          name: "IDP Staging"
+          cluster:
+            type: "eks" # eks, gke, aks, kind
+            context: "arn:aws:eks:us-east-1:123456789012:cluster/idp-staging"
+          namespace: "idp-staging"
+          domain: "staging.idp.company.com"
+          resources:
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+              storage: "50Gi"
+          features:
+            localstack: false
+            istio: true
+            monitoring: true
+            security_scanning: true
+          promotion:
+            target: "production"
+            auto_promote: false
+            approval_required: true
+            
+        production:
+          name: "IDP Production"
+          cluster:
+            type: "eks"
+            context: "arn:aws:eks:us-east-1:123456789012:cluster/idp-production"
+          namespace: "idp-prod"
+          domain: "idp.company.com"
+          resources:
+            limits:
+              cpu: "8"
+              memory: "16Gi"
+              storage: "200Gi"
+          features:
+            localstack: false
+            istio: true
+            monitoring: true
+            security_scanning: true
+            compliance_scanning: true
+          promotion:
+            target: null
+            auto_promote: false
+            approval_required: true
+            
+      promotion_workflow:
+        stages:
+          - name: "validate"
+            steps:
+              - "health_check"
+              - "security_scan"
+              - "integration_test"
+              
+          - name: "deploy"
+            steps:
+              - "backup_current"
+              - "deploy_changes"
+              - "smoke_test"
+              
+          - name: "verify"
+            steps:
+              - "health_verification"
+              - "performance_check"
+              - "rollback_readiness"
+              
+        rollback:
+          trigger: "health_failure"
+          timeout: "300s"
+          strategy: "immediate"
+          
+      cross_instance_communication:
+        service_discovery:
+          enabled: true
+          method: "dns" # dns, consul, istio
+          
+        secrets_sync:
+          enabled: true
+          sync_interval: "5m"
+          excluded_secrets:
+            - "cluster-specific-certs"
+            - "environment-tokens"
+            
+        config_sync:
+          enabled: true
+          sync_interval: "1m"
+          config_types:
+            - "backstage-catalog"
+            - "workflow-templates"
+            - "policy-configurations"
