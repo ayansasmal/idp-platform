@@ -1,0 +1,143 @@
+# IDP Platform Component Versions
+# This file tracks current and available versions for all platform components
+
+apiVersion: platform.idp/v1alpha1
+kind: PlatformVersions
+metadata:
+  name: idp-platform-versions
+  namespace: idp-system
+  labels:
+    app.kubernetes.io/name: idp-platform
+    app.kubernetes.io/component: version-manager
+  annotations:
+    platform.idp/last-updated: "2024-01-15T10:00:00Z"
+    platform.idp/version-format: "semantic"
+
+spec:
+  platform:
+    name: "IDP Platform"
+    version: "1.0.0"
+    gitCommit: "main"
+    
+  components:
+    # Core Infrastructure
+    core-infrastructure:
+      argocd-platform:
+        current: "2.9.3"
+        available: ["2.9.3", "2.9.2", "2.9.1"]
+        chart: "charts/core-infrastructure/argocd-platform"
+        namespace: "argocd"
+        dependencies: []
+        
+      istio-config:
+        current: "1.20.2"
+        available: ["1.20.2", "1.20.1", "1.19.6"]
+        chart: "charts/core-infrastructure/istio-config"
+        namespace: "istio-system"
+        dependencies: []
+        
+      crossplane-config:
+        current: "1.14.5"
+        available: ["1.14.5", "1.14.4", "1.14.3"]
+        chart: "charts/core-infrastructure/crossplane-config"
+        namespace: "crossplane-system"
+        dependencies: []
+        
+      cert-manager-config:
+        current: "1.13.3"
+        available: ["1.13.3", "1.13.2", "1.13.1"]
+        chart: "charts/core-infrastructure/cert-manager-config"
+        namespace: "cert-manager"
+        dependencies: []
+
+    # Observability Stack
+    observability:
+      monitoring-stack:
+        current: "1.0.0"
+        available: ["1.0.0"]
+        chart: "charts/observability/monitoring-stack"
+        namespace: "monitoring"
+        dependencies: []
+        components:
+          prometheus: "2.49.1"
+          grafana: "10.2.3"
+          alertmanager: "0.26.0"
+          
+      tracing-stack:
+        current: "1.52.0"
+        available: ["1.52.0", "1.51.0", "1.50.1"]
+        chart: "charts/observability/tracing-stack"
+        namespace: "istio-system"
+        dependencies: ["istio-config"]
+        components:
+          jaeger: "1.52.0"
+          
+      service-mesh-obs:
+        current: "1.20.2"
+        available: ["1.20.2", "1.20.1", "1.19.6"]
+        chart: "charts/observability/service-mesh-obs"
+        namespace: "istio-system"
+        dependencies: ["istio-config"]
+        components:
+          kiali: "1.79.0"
+
+    # Platform Services
+    platform-services:
+      backstage-deployment:
+        current: "1.21.1"
+        available: ["1.21.1", "1.21.0", "1.20.4"]
+        chart: "charts/platform-services/backstage-deployment"
+        namespace: "backstage"
+        dependencies: ["argocd-platform"]
+        
+      argo-workflows:
+        current: "3.5.2"
+        available: ["3.5.2", "3.5.1", "3.5.0"]
+        chart: "charts/platform-services/argo-workflows"
+        namespace: "argo-workflows"
+        dependencies: ["argocd-platform"]
+        
+      external-secrets:
+        current: "0.9.11"
+        available: ["0.9.11", "0.9.10", "0.9.9"]
+        chart: "charts/platform-services/external-secrets"
+        namespace: "external-secrets"
+        dependencies: []
+
+    # Custom Components
+    custom-components:
+      platform-crds:
+        current: "1.0.0"
+        available: ["1.0.0"]
+        chart: "charts/custom-components/platform-crds"
+        namespace: "idp-system"
+        dependencies: []
+        
+      platform-operators:
+        current: "1.0.0"
+        available: ["1.0.0"]
+        chart: "charts/custom-components/platform-operators"
+        namespace: "idp-system"
+        dependencies: ["platform-crds"]
+
+status:
+  # Runtime status tracking
+  health:
+    overall: "healthy"
+    components:
+      argocd-platform: "healthy"
+      istio-config: "healthy" 
+      monitoring-stack: "healthy"
+      backstage-deployment: "healthy"
+      argo-workflows: "healthy"
+      
+  lastUpdate:
+    timestamp: "2024-01-15T10:00:00Z"
+    component: "monitoring-stack"
+    version: "1.0.0"
+    status: "success"
+    
+  updates:
+    pending: []
+    inProgress: []
+    failed: []

@@ -1,0 +1,46 @@
+apiVersion: v2
+name: monitoring-stack
+description: Complete observability stack with Prometheus, Grafana, and Alertmanager for IDP Platform
+type: application
+version: 1.0.0
+appVersion: "2.49.1"  # Prometheus version
+
+keywords:
+  - monitoring
+  - prometheus
+  - grafana
+  - alertmanager
+  - observability
+
+home: https://github.com/ayansasmal/idp-platform
+sources:
+  - https://github.com/ayansasmal/idp-platform/tree/main/charts/observability/monitoring-stack
+
+maintainers:
+  - name: IDP Platform Team
+    email: platform-team@company.com
+
+dependencies:
+  - name: prometheus
+    version: 25.8.2
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: prometheus.enabled
+  - name: grafana
+    version: 7.0.19
+    repository: https://grafana.github.io/helm-charts
+    condition: grafana.enabled
+  - name: alertmanager
+    version: 1.7.0
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: alertmanager.enabled
+
+annotations:
+  category: Observability
+  licenses: Apache-2.0
+  images: |
+    - name: prometheus
+      image: prom/prometheus:v2.49.1
+    - name: grafana
+      image: grafana/grafana:10.2.3
+    - name: alertmanager
+      image: prom/alertmanager:v0.26.0

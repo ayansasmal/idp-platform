@@ -1,0 +1,111 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: backstage-ci-pipeline
+  namespace: argo-workflows
+spec:
+  entrypoint: build-and-deploy
+  arguments:
+    parameters:
+    - name: repo-url
+      value: "https://github.com/ayansasmal/idp-backstage-app.git"
+    - name: branch
+      value: "main"
+    - name: image-name
+      value: "idp/backstage-app"
+    - name: image-tag
+      value: "latest"
+
+  templates:
+  - name: build-and-deploy
+    dag:
+      tasks:
+      - name: clone-source
+        template: git-clone
+      - name: build-app
+        template: yarn-build
+        dependencies: [clone-source]
+      - name: build-container
+        template: container-build
+        dependencies: [build-app]
+      - name: deploy-to-platform
+        template: trigger-deployment
+        dependencies: [build-container]
+
+  - name: git-clone
+    container:
+      image: alpine/git:latest
+      workingDir: /workspace
+      command: [sh, -c]
+      args:
+        - |
+          echo "🚀 Cloning Backstage repository..."
+          git clone {{workflow.parameters.repo-url}} .
+          git checkout {{workflow.parameters.branch}}
+          echo "✅ Repository cloned successfully"
+          ls -la
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+
+  - name: yarn-build
+    container:
+      image: node:18-alpine
+      workingDir: /workspace
+      command: [sh, -c]
+      args:
+        - |
+          echo "📦 Installing dependencies..."
+          yarn install --frozen-lockfile
+          echo "🏗️ Building Backstage application..."
+          yarn build:all
+          echo "✅ Build completed successfully"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+
+  - name: container-build
+    container:
+      image: gcr.io/kaniko-project/executor:debug
+      workingDir: /workspace
+      args:
+        - --dockerfile=Dockerfile
+        - --context=.
+        - --destination=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:{{workflow.parameters.image-tag}}
+        - --destination=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:build-{{workflow.uid}}
+        - --insecure
+        - --skip-tls-verify
+        - --insecure-registry=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566
+        - --cache=false
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+      env:
+      - name: AWS_ACCESS_KEY_ID
+        value: "test"
+      - name: AWS_SECRET_ACCESS_KEY
+        value: "test"
+      - name: AWS_DEFAULT_REGION
+        value: "us-east-1"
+
+  - name: trigger-deployment
+    container:
+      image: bitnami/kubectl:latest
+      command: [sh, -c]
+      args:
+        - |
+          echo "🔄 Triggering ArgoCD sync for Backstage deployment..."
+          kubectl patch application backstage-platform -n argocd \
+            -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' \
+            --type merge || echo "ArgoCD sync trigger failed"
+          
+          echo "📋 Updating deployment with new image..."
+          kubectl set image deployment/backstage backstage=000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/{{workflow.parameters.image-name}}:{{workflow.parameters.image-tag}} \
+            -n backstage || echo "Direct deployment update failed"
+          
+          echo "✅ Deployment update triggered"
+          echo "🚀 Backstage will be available at: http://localhost:3000"
+
+  volumes:
+  - name: workspace
+    emptyDir: {}

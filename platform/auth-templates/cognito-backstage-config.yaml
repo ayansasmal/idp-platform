@@ -1,0 +1,131 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-cognito-config
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: backstage
+    app.kubernetes.io/component: auth-config
+data:
+  # AWS Cognito OAuth Configuration for Backstage
+  app-config.yaml: |
+    auth:
+      environment: ${IDP_ENVIRONMENT:-development}
+      providers:
+        awsCognito:
+          ${IDP_ENVIRONMENT:-development}:
+            clientId: ${COGNITO_CLIENT_ID}
+            clientSecret: ${COGNITO_CLIENT_SECRET}
+            region: ${COGNITO_REGION:-us-east-1}
+            userPoolId: ${COGNITO_USER_POOL_ID}
+            domain: ${COGNITO_DOMAIN}.auth.${COGNITO_REGION:-us-east-1}.amazoncognito.com
+            signInRedirectUrl: http://localhost:3000/api/auth/cognito/handler/frame
+            signOutRedirectUrl: http://localhost:3000
+            additionalScopes:
+              - email
+              - profile
+              - openid
+            resolvers:
+              # Map Cognito user attributes to Backstage user entity
+              - resolver: emailMatchingUserEntityName
+                options:
+                  allowSignUp: true
+                  signUpOptions:
+                    userEntityRef: user:default/${cognito:preferred_username}
+                    profile:
+                      email: ${cognito:email}
+                      displayName: ${cognito:name}
+                      picture: ${cognito:picture}
+
+    signInPage: cognito
+    
+    # Cognito session configuration
+    session:
+      cookie:
+        secure: ${NODE_ENV !== 'development'}
+        sameSite: 'lax'
+      keys: ['${BACKSTAGE_COOKIE_SECRET}']
+
+    # Backend configuration
+    backend:
+      auth:
+        keys:
+          - secret: ${BACKSTAGE_BACKEND_SECRET}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-cognito-env-vars
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: backstage
+    app.kubernetes.io/component: auth-env-vars
+data:
+  # Environment variables for Backstage Cognito integration
+  NODE_ENV: ${IDP_ENVIRONMENT:-development}
+  APP_CONFIG_auth_environment: ${IDP_ENVIRONMENT:-development}
+  APP_CONFIG_auth_providers_awsCognito_${IDP_ENVIRONMENT:-development}_region: ${COGNITO_REGION:-us-east-1}
+  APP_CONFIG_auth_providers_awsCognito_${IDP_ENVIRONMENT:-development}_userPoolId: ${COGNITO_USER_POOL_ID}
+  APP_CONFIG_auth_providers_awsCognito_${IDP_ENVIRONMENT:-development}_domain: ${COGNITO_DOMAIN}.auth.${COGNITO_REGION:-us-east-1}.amazoncognito.com
+
+---
+# Backstage deployment patch for Cognito integration
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backstage
+  namespace: backstage
+spec:
+  template:
+    spec:
+      containers:
+      - name: backstage
+        env:
+        - name: COGNITO_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: cognito-credentials
+              key: client-id
+        - name: COGNITO_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: cognito-credentials
+              key: client-secret
+        - name: COGNITO_USER_POOL_ID
+          valueFrom:
+            secretKeyRef:
+              name: cognito-credentials
+              key: user-pool-id
+        - name: COGNITO_REGION
+          valueFrom:
+            secretKeyRef:
+              name: cognito-credentials
+              key: region
+        - name: COGNITO_DOMAIN
+          valueFrom:
+            secretKeyRef:
+              name: cognito-credentials
+              key: domain
+        - name: BACKSTAGE_COOKIE_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: platform-service-secrets
+              key: jwt-secret-backstage
+        - name: BACKSTAGE_BACKEND_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: platform-service-secrets
+              key: jwt-secret-backstage
+        envFrom:
+        - configMapRef:
+            name: backstage-cognito-env-vars
+        volumeMounts:
+        - name: cognito-config
+          mountPath: /app/cognito-app-config.yaml
+          subPath: app-config.yaml
+          readOnly: true
+      volumes:
+      - name: cognito-config
+        configMap:
+          name: backstage-cognito-config

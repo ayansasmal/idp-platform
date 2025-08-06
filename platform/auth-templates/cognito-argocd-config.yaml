@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cognito-config
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-server
+    app.kubernetes.io/component: oidc-config
+data:
+  # ArgoCD OIDC Configuration for AWS Cognito
+  argocd-cm.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: argocd-cm
+      namespace: argocd
+      labels:
+        app.kubernetes.io/name: argocd-cm
+        app.kubernetes.io/part-of: argocd
+    data:
+      # OIDC configuration for AWS Cognito
+      oidc.config: |
+        name: AWS Cognito
+        issuer: https://cognito-idp.${COGNITO_REGION:-us-east-1}.amazonaws.com/${COGNITO_USER_POOL_ID}
+        clientId: ${COGNITO_CLIENT_ID}
+        clientSecret: ${COGNITO_CLIENT_SECRET}
+        requestedScopes: ["openid", "profile", "email"]
+        requestedIDTokenClaims: {"groups": {"essential": true}}
+        logoutURL: https://${COGNITO_DOMAIN}.auth.${COGNITO_REGION:-us-east-1}.amazoncognito.com/logout
+        
+      # URL configuration
+      url: https://localhost:8080
+      
+      # RBAC configuration
+      policy.default: role:readonly
+      policy.csv: |
+        p, role:admin, applications, *, */*, allow
+        p, role:admin, clusters, *, *, allow
+        p, role:admin, repositories, *, *, allow
+        p, role:developer, applications, get, */*, allow
+        p, role:developer, applications, sync, */*, allow
+        p, role:developer, repositories, get, *, allow
+        g, cognito:admin, role:admin
+        g, cognito:developers, role:developer
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-cognito-secret
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-server
+    app.kubernetes.io/component: oidc-secret
+type: Opaque
+data:
+  # OIDC client secret for ArgoCD Cognito integration
+  oidc.cognito.clientSecret: ${COGNITO_CLIENT_SECRET_B64}
+
+---
+# ArgoCD server configuration patch for Cognito OIDC
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argocd-server
+  namespace: argocd
+spec:
+  template:
+    spec:
+      containers:
+      - name: argocd-server
+        env:
+        - name: ARGOCD_SERVER_OIDC_CONFIG
+          value: |
+            name: AWS Cognito
+            issuer: https://cognito-idp.${COGNITO_REGION:-us-east-1}.amazonaws.com/${COGNITO_USER_POOL_ID}
+            clientId: ${COGNITO_CLIENT_ID}
+            clientSecret: $oidc.cognito.clientSecret
+            requestedScopes: ["openid", "profile", "email"]
+            requestedIDTokenClaims: {"groups": {"essential": true}}
+        command:
+        - argocd-server
+        - --staticassets
+        - /shared/app
+        - --oidc-config-path
+        - /etc/oidc/config
+        volumeMounts:
+        - name: cognito-oidc-config
+          mountPath: /etc/oidc
+          readOnly: true
+      volumes:
+      - name: cognito-oidc-config
+        secret:
+          secretName: argocd-cognito-secret

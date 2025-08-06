@@ -29,33 +29,32 @@ A comprehensive Kubernetes-based Integrated Developer Platform designed for web 
 
 ## 🚀 Quick Start
 
-**One-command platform startup:**
+**Simplified one-command workflow:**
 
 ```bash
 # Clone the repository
 git clone https://github.com/ayansasmal/idp-platform.git
 cd idp-platform
 
-# Setup external LocalStack (required)
-./scripts/setup-external-localstack.sh
+# One-time platform setup (includes LocalStack, ArgoCD, Argo Workflows)
+./scripts/idp.sh setup
 
-# Start the entire platform (includes Backstage setup)
-./scripts/quick-start.sh
+# Build Backstage through IDP workflows (uses internal CI/CD)
+./scripts/idp.sh build-backstage
 
-# Optional: Setup development aliases
-./scripts/dev-setup.sh
+# Start all platform services
+./scripts/idp.sh start
 ```
 
 **That's it!** Your IDP platform will be running with all services accessible via browser.
 
-### What happens during startup:
+### What happens during the workflow:
 
-1. **Configuration Check**: Loads and validates platform configuration
-2. **Platform Health Check**: Validates prerequisites and dependencies
-3. **External Backstage Setup**: Automatically clones, builds, and integrates the separate Backstage repository
-4. **Service Startup**: Launches all platform services via intelligent discovery
-5. **Data Protection**: Applies security policies if enabled
-6. **Integration**: Connects Backstage with platform services and deploys via ArgoCD
+1. **Platform Setup**: Deploys ArgoCD, Argo Workflows, and core infrastructure
+2. **LocalStack Setup**: AWS service emulation for development
+3. **Backstage Build**: Uses internal Argo Workflows to clone, build, and containerize Backstage
+4. **GitOps Deployment**: ArgoCD automatically deploys Backstage to the platform
+5. **Service Discovery**: Intelligent port-forwarding for all available services
 
 **Note**: The Backstage application is maintained in a separate GitHub repository for independent development while seamlessly integrating with the platform.
 
@@ -97,17 +96,20 @@ Once started, access your platform services:
 ## ⚡ Quick Commands
 
 ```bash
-# Platform management
-idp-start          # Start all services
-idp-stop           # Stop all services  
-idp-status         # Check service status
-idp-health         # Platform health check
-idp-restart        # Restart all services
+# Platform management (new unified commands)
+./scripts/idp.sh setup           # One-time platform setup
+./scripts/idp.sh start           # Start all services with port-forwards
+./scripts/idp.sh stop            # Stop all services
+./scripts/idp.sh restart         # Restart platform services
+./scripts/idp.sh status          # Check platform status
+./scripts/idp.sh build-backstage # Build Backstage via IDP workflows
+./scripts/idp.sh config          # Run configuration wizard
 
-# Service access shortcuts
-idp-argocd         # Open ArgoCD
-idp-backstage      # Open Backstage
-idp-grafana        # Open Grafana
+# Component versioning & rollback (new capabilities) 🆕
+./scripts/idp.sh versions                               # List all component versions
+./scripts/idp.sh update monitoring-stack --version 1.1.0  # Update specific component
+./scripts/idp.sh rollback monitoring-stack --steps 1   # Rollback component safely
+./scripts/health-check.sh                             # Validate component health
 ```
 
 ## 📋 Prerequisites

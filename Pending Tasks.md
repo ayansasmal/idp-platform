@@ -2,6 +2,65 @@
 
 This document outlines the critical development tasks to build a comprehensive, feature-rich, flexible, and scalable Integrated Developer Platform (IDP). The focus is on creating a robust platform with enterprise-grade capabilities before considering organizational migration strategies.
 
+## 0. Component Versioning and Rollback Capabilities (NEW - HIGH PRIORITY)
+
+### Task Overview
+
+Implement independent versioning and rollback capabilities for each IDP platform component to prevent system-wide outages during updates and provide granular control over service lifecycles.
+
+### Current State
+
+- All components deployed through ArgoCD applications but lack versioning strategy
+- No rollback mechanism for individual services (Istio, Grafana, etc.)
+- Updates can potentially affect entire platform stability
+- No canary deployment capabilities for platform components
+
+### Requirements
+
+#### 0.1 Component Versioning Framework
+
+- **Objective**: Enable independent versioning of each platform component with safe update mechanisms
+- **Component Categories**:
+  - **Core Infrastructure**: ArgoCD, Istio, Crossplane, cert-manager
+  - **Observability Stack**: Grafana, Prometheus, Jaeger, Kiali  
+  - **Platform Services**: Backstage, Argo Workflows, External Secrets
+  - **Custom Components**: CRDs, Operators, Platform Abstractions
+
+#### 0.2 Rollback and Recovery Mechanisms
+
+- **Instant Rollback**: Ability to rollback any component to previous version
+- **Health Checks**: Automated validation after component updates
+- **Rollback Triggers**: Automatic rollback on health check failures
+- **Version History**: Maintain history of component versions and changes
+
+#### 0.3 Implementation Strategy
+
+- **Helm Chart Integration**: Convert component deployments to versioned Helm charts
+- **ArgoCD Version Management**: Leverage ArgoCD's revision capabilities
+- **CLI Integration**: Add versioning commands to unified `idp.sh` script
+- **GitOps Workflow**: Maintain version control through Git tags and branches
+
+### Deliverables
+
+1. **Component Version Management**
+   - Helm charts for each platform component with semantic versioning
+   - Version manifest tracking current and available versions
+   
+2. **CLI Commands**
+   - `./scripts/idp.sh update <component> --version <version>` 
+   - `./scripts/idp.sh rollback <component> --steps <n>`
+   - `./scripts/idp.sh versions list [component]`
+   
+3. **Automated Safety**
+   - Health check validations after updates
+   - Automatic rollback on failure detection
+   - Component dependency validation
+
+4. **Documentation**
+   - Version management guide
+   - Rollback procedures
+   - Component update best practices
+
 ## 1. IDP Setup Configuration and External Dependencies Management
 
 ### Task Overview
