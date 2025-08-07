@@ -2,6 +2,82 @@
 
 This directory contains Windmill flows and scripts for orchestrating the Integrated Developer Platform (IDP). It provides the automation backbone for the platform with AI agent integration capabilities.
 
+## 🚀 Quick Setup (Zero to Windmill)
+
+**⚠️ Important:** Windmill is not included in the basic IDP setup. Follow these steps to add Windmill orchestration to your platform.
+
+### Prerequisites
+
+Before setting up Windmill, ensure you have a working machine with basic development tools:
+
+```bash
+# Option 1: Automated prerequisite installation (recommended)
+./scripts/setup-machine.sh setup
+
+# Option 2: Manual verification of existing tools
+./scripts/setup-machine.sh verify
+```
+
+**Required Tools:**
+- Docker Desktop with Kubernetes enabled (or Kind/Minikube)
+- Docker Compose v2.0+
+- curl, jq, git
+- Node.js 16+ with npm/yarn
+
+### Windmill Installation
+
+```bash
+# 1. Complete Windmill setup (one command!)
+./scripts/setup-windmill.sh setup
+
+# This automatically:
+# ✅ Checks prerequisites
+# ✅ Creates Docker Compose configuration
+# ✅ Starts Windmill services (PostgreSQL + Windmill)
+# ✅ Installs Windmill CLI
+# ✅ Creates 'idp' workspace
+# ✅ Generates management scripts
+# ✅ Waits for services to be ready
+```
+
+### Verification
+
+```bash
+# Check Windmill is running
+./scripts/setup-windmill.sh status
+
+# Access Windmill UI
+open http://localhost:8000
+
+# Check CLI is working
+wmill workspace list
+```
+
+### Next Steps
+
+1. **Complete Admin Setup**: Open http://localhost:8000 and create your admin user
+2. **Import IDP Flows**: Upload flows from this directory using the Windmill UI
+3. **Test Integration**: Run the platform bootstrap flow
+4. **Configure AI Agent** (optional): Set up LangChain integration
+
+### Management Commands
+
+```bash
+# Service management
+./scripts/start-windmill.sh     # Start Windmill services  
+./scripts/stop-windmill.sh      # Stop Windmill services
+./scripts/setup-windmill.sh status   # Check service status
+./scripts/setup-windmill.sh logs     # View service logs
+./scripts/setup-windmill.sh clean    # Complete removal
+
+# Workspace management (auto-configured)
+wmill workspace use idp         # Switch to IDP workspace
+wmill sync pull                 # Download flows from server
+wmill sync push                 # Upload local changes
+```
+
+**That's it!** Windmill is now running and ready for AI-powered platform management. 🎉
+
 ## Overview
 
 The Windmill orchestration layer serves as:
@@ -250,6 +326,66 @@ Enable debug logging:
 ```bash
 export DEBUG=1
 export WINDMILL_DEBUG=true
+```
+
+### Setup Troubleshooting
+
+**1. "Port 8000 already in use"**
+```bash
+# Check what's using the port
+lsof -ti:8000
+
+# Stop existing Windmill
+./scripts/stop-windmill.sh
+
+# Or change the port in .env.windmill
+echo "WINDMILL_PORT=8001" >> .env.windmill
+```
+
+**2. "Docker Compose command not found"**
+```bash
+# Check Docker Compose version
+docker compose version  # v2 syntax
+docker-compose --version  # v1 syntax
+
+# Setup script will detect and use the correct version
+./scripts/setup-windmill.sh setup
+```
+
+**3. "Windmill CLI not found after setup"**
+```bash
+# Check if npm is working
+npm --version
+
+# Manual CLI installation
+npm install -g windmill-cli@1.150.0
+
+# Alternative: Download binary directly (Linux/macOS)
+curl -L "https://github.com/windmill-labs/windmill/releases/download/v1.150.0/wmill-v1.150.0-linux-x64" -o /usr/local/bin/wmill
+chmod +x /usr/local/bin/wmill
+```
+
+**4. "Services won't start"**
+```bash
+# Check Docker is running
+docker info
+
+# Check logs for specific errors
+./scripts/setup-windmill.sh logs
+
+# Complete reset
+./scripts/setup-windmill.sh clean
+./scripts/setup-windmill.sh setup
+```
+
+**5. "Can't access Windmill UI"**
+```bash
+# Wait for services to fully initialize
+# Check if Windmill server is ready
+curl http://localhost:8000/api/version
+
+# If timeout, check firewall/network settings
+# Or try different port in .env.windmill
 ```
 
 ## Future Enhancements

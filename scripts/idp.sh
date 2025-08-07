@@ -32,6 +32,7 @@ CHARTS_DIR="$ROOT_DIR/charts"
 ASYNC_MODE=false
 JSON_OUTPUT=false
 TASK_MANAGER="$SCRIPT_DIR/async-task-manager.sh"
+WITH_WINDMILL=false
 
 # Load configuration if available
 load_config() {
@@ -169,6 +170,10 @@ parse_arguments() {
                 ASYNC_MODE=false
                 shift
                 ;;
+            --with-windmill)
+                WITH_WINDMILL=true
+                shift
+                ;;
             --help)
                 show_usage
                 exit 0
@@ -191,6 +196,7 @@ USAGE:
 
 COMMANDS:
     setup                    Setup IDP platform
+    setup-windmill           Setup Windmill workflow orchestration
     start                    Start platform services
     stop                     Stop platform services
     restart                  Restart platform services
@@ -205,10 +211,13 @@ OPTIONS:
     --async                  Execute long-running tasks in background
     --json                   Output results in JSON format
     --sync                   Force synchronous execution (default)
+    --with-windmill          Include Windmill setup in platform setup
     --help                   Show this help message
 
 EXAMPLES:
     $0 setup --async --json              # Setup in background with JSON output
+    $0 setup --with-windmill             # Setup platform including Windmill
+    $0 setup-windmill                    # Setup Windmill workflow orchestration
     $0 status --json                     # Get status in JSON format
     $0 task-status platform-setup        # Check async task status
     $0 build-backstage --async           # Build Backstage in background
@@ -351,6 +360,19 @@ setup_platform_sync() {
         done
     else
         print_warning "Platform services applications not found, skipping..."
+    fi
+    
+    # Optional Windmill setup
+    if [ "$WITH_WINDMILL" = "true" ]; then
+        print_header "Setting up Windmill Orchestration"
+        if [ -f "$SCRIPT_DIR/setup-windmill.sh" ]; then
+            print_status "Setting up Windmill workflow orchestration..."
+            "$SCRIPT_DIR/setup-windmill.sh" setup
+            print_success "Windmill orchestration setup completed"
+            print_status "Access Windmill at: http://localhost:8000"
+        else
+            print_error "Windmill setup script not found at $SCRIPT_DIR/setup-windmill.sh"
+        fi
     fi
     
     print_success "Platform setup completed"
@@ -611,6 +633,7 @@ show_usage() {
     echo -e "${PURPLE}Usage:${NC} $0 <command> [options]\n"
     echo -e "${PURPLE}Platform Management Commands:${NC}"
     echo -e "  ${GREEN}setup${NC}           Set up the IDP platform (one-time)"
+    echo -e "  ${GREEN}setup-windmill${NC}  Set up Windmill workflow orchestration ${CYAN}[NEW]${NC}"
     echo -e "  ${GREEN}start${NC}           Start platform services with port-forwards"
     echo -e "  ${GREEN}stop${NC}            Stop all platform services"
     echo -e "  ${GREEN}restart${NC}         Restart platform services"
@@ -632,6 +655,8 @@ show_usage() {
     echo -e "  ${GREEN}help${NC}            Show this help message\n"
     echo -e "${PURPLE}Examples:${NC}"
     echo -e "  $0 setup                                    # Initial platform setup"
+    echo -e "  $0 setup --with-windmill                    # Setup platform including Windmill"
+    echo -e "  $0 setup-windmill                           # Setup Windmill orchestration only"
     echo -e "  $0 credentials setup                        # Interactive credential configuration"
     echo -e "  $0 start                                    # Start all services"
     echo -e "  $0 versions                                 # List all component versions"
@@ -1023,6 +1048,9 @@ parse_arguments "$@"
 case "${PARSED_ARGS[0]:-help}" in
     "setup")
         setup_platform
+        ;;
+    "setup-windmill")
+        "$SCRIPT_DIR/setup-windmill.sh" setup
         ;;
     "start")
         start_services_main

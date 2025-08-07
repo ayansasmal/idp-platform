@@ -320,20 +320,47 @@ labels:
 - VirtualServices follow pattern: `{app-name}.{environment}.idp.local`
 - mTLS enforced cluster-wide
 
-## 🤖 AI-Powered Platform Management (NEW)
+## 🤖 AI-Powered Platform Management (Optional)
 
-### Windmill Workflow Orchestration
+### Windmill Workflow Orchestration Setup
 
-The IDP now includes comprehensive workflow orchestration using [Windmill](https://windmill.dev) for enterprise-grade automation and AI agent integration.
+The IDP can be enhanced with comprehensive workflow orchestration using [Windmill](https://windmill.dev) for enterprise-grade automation and AI agent integration.
 
-#### Key Features:
+**⚠️ Important:** Windmill is not included in the basic IDP setup. You need to install it separately.
+
+#### Quick Windmill Setup
+
+```bash
+# 1. Install machine prerequisites (if needed)
+./scripts/setup-machine.sh setup
+
+# 2. Setup Windmill orchestration (one command)
+./scripts/setup-windmill.sh setup
+
+# 3. Access Windmill UI and complete admin setup
+open http://localhost:8000
+
+# 4. Import IDP flows from windmill/ directory
+# (Upload flows manually via Windmill UI)
+```
+
+#### Management Commands:
+```bash
+# Service management (auto-created scripts)
+./scripts/start-windmill.sh     # Start Windmill services
+./scripts/stop-windmill.sh      # Stop Windmill services
+./scripts/setup-windmill.sh status  # Check service status
+./scripts/setup-windmill.sh clean   # Complete removal
+```
+
+#### Key Features (After Setup):
 - **Complete Bootstrap Flow**: End-to-end platform setup with validation
 - **Async Task Management**: Non-blocking operations for AI agent responsiveness
 - **LangChain Integration**: Natural language platform management
 - **JSON APIs**: Structured responses for programmatic consumption
 - **Error Handling**: Comprehensive error management with graceful degradation
 
-#### Available Workflows:
+#### Available Workflows (After Setup):
 ```bash
 # Windmill Flow Examples (via API or Agent)
 curl -X POST http://localhost:8000/api/w/idp/jobs/run/f/idp/bootstrap-platform \
@@ -378,7 +405,7 @@ windmill/
     └── example-idp-agent.py        # Example agent implementation
 ```
 
-For detailed information, see [Windmill Integration Guide](./windmill/README.md).
+For detailed setup instructions, see [Windmill Integration Guide](./windmill/README.md).
 
 ## 🔧 Troubleshooting
 
