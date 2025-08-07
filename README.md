@@ -96,20 +96,29 @@ Once started, access your platform services:
 ## ⚡ Quick Commands
 
 ```bash
-# Platform management (new unified commands)
-./scripts/idp.sh setup           # One-time platform setup
-./scripts/idp.sh start           # Start all services with port-forwards
-./scripts/idp.sh stop            # Stop all services
-./scripts/idp.sh restart         # Restart platform services
-./scripts/idp.sh status          # Check platform status
-./scripts/idp.sh build-backstage # Build Backstage via IDP workflows
-./scripts/idp.sh config          # Run configuration wizard
+# Platform management (unified script with async support)
+./scripts/idp.sh setup                    # One-time platform setup
+./scripts/idp.sh start                    # Start all services
+./scripts/idp.sh stop                     # Stop all services  
+./scripts/idp.sh restart                  # Restart platform services
+./scripts/idp.sh status                   # Check platform status
+./scripts/idp.sh build-backstage          # Build Backstage via Argo Workflows
 
-# Component versioning & rollback (new capabilities) 🆕
-./scripts/idp.sh versions                               # List all component versions
-./scripts/idp.sh update monitoring-stack --version 1.1.0  # Update specific component
-./scripts/idp.sh rollback monitoring-stack --steps 1   # Rollback component safely
-./scripts/health-check.sh                             # Validate component health
+# Async execution (non-blocking for AI agents)
+./scripts/idp.sh setup --async --json     # Setup in background with JSON output
+./scripts/idp.sh status --json            # Get status in JSON format
+./scripts/idp.sh task-status platform-setup    # Check async task status
+
+# AI Agent Integration & Windmill Orchestration (NEW) 🤖
+# Complete workflow automation with LangChain agent support
+curl -X POST http://localhost:8000/api/w/idp/jobs/run/f/idp/bootstrap-platform \
+  -d '{"environment": "development", "enable_monitoring": true}'
+
+# Advanced features
+./scripts/idp.sh credentials setup        # Interactive credential management
+./scripts/idp.sh versions                 # Component version management
+./scripts/idp.sh update istio --version 1.20.1 --dry-run  # Safe component updates
+./scripts/idp.sh rollback monitoring --steps 1            # Component rollback
 ```
 
 ## 📋 Prerequisites
@@ -310,6 +319,66 @@ labels:
 - All pods get `sidecar.istio.io/inject: "true"`
 - VirtualServices follow pattern: `{app-name}.{environment}.idp.local`
 - mTLS enforced cluster-wide
+
+## 🤖 AI-Powered Platform Management (NEW)
+
+### Windmill Workflow Orchestration
+
+The IDP now includes comprehensive workflow orchestration using [Windmill](https://windmill.dev) for enterprise-grade automation and AI agent integration.
+
+#### Key Features:
+- **Complete Bootstrap Flow**: End-to-end platform setup with validation
+- **Async Task Management**: Non-blocking operations for AI agent responsiveness
+- **LangChain Integration**: Natural language platform management
+- **JSON APIs**: Structured responses for programmatic consumption
+- **Error Handling**: Comprehensive error management with graceful degradation
+
+#### Available Workflows:
+```bash
+# Windmill Flow Examples (via API or Agent)
+curl -X POST http://localhost:8000/api/w/idp/jobs/run/f/idp/bootstrap-platform \
+  -d '{"environment": "development", "enable_monitoring": true, "dry_run": false}'
+
+curl -X POST http://localhost:8000/api/w/idp/jobs/run/f/idp/platform-operations \
+  -d '{"operation": "health", "comprehensive_health": true}'
+```
+
+#### AI Agent Integration:
+```python
+# LangChain Agent Example
+from windmill.langchain_tools import create_idp_agent_tools
+
+# Create tools for AI agent
+tools = create_idp_agent_tools(
+    windmill_url="http://localhost:8000",
+    workspace="idp"
+)
+
+# Natural language commands:
+# "Set up the complete platform for development"
+# "Check the health of all platform services" 
+# "Restart Backstage and verify it's running"
+```
+
+#### Directory Structure:
+```
+windmill/
+├── flows/                    # Windmill workflow definitions
+│   ├── idp-bootstrap.flow.ts       # Complete platform bootstrap
+│   └── platform-operations.flow.ts # Service management operations
+├── scripts/                  # Individual workflow scripts  
+│   ├── check-prerequisites.ts      # Environment validation
+│   ├── setup-infrastructure.ts     # LocalStack & OPA setup
+│   ├── setup-authentication.ts     # AWS Cognito configuration
+│   └── health-check-platform.ts    # Comprehensive health checks
+├── integration/              # Bridge components
+│   └── windmill-idp-bridge.ts     # Integration with IDP scripts
+└── langchain-tools/         # AI agent tools
+    ├── idp-platform-tools.py      # LangChain tool definitions
+    └── example-idp-agent.py        # Example agent implementation
+```
+
+For detailed information, see [Windmill Integration Guide](./windmill/README.md).
 
 ## 🔧 Troubleshooting
 

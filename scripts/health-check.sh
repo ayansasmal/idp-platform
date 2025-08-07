@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# Component Health Check Script
-# Validates platform component health after updates or during rollbacks
+# IDP Platform Health Check Script
+# Validates platform component health with JSON output for automation
+# Compatible with idp-agent and windmill automation
 
-set -e
+set -euo pipefail
 
 # Colors
 RED='\033[0;31m'

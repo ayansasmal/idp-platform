@@ -1,9 +1,10 @@
 #!/bin/bash
 
 # IDP Platform Master Script
-# One unified script to rule them all - simplified and efficient
+# One unified script to rule them all - with async execution support
+# Supports background tasks to prevent blocking IDP-agent interactions
 
-set -e
+set -euo pipefail
 
 # Colors
 RED='\033[0;31m'
@@ -27,6 +28,11 @@ IMAGE_TAG="latest"
 VERSIONS_FILE="$ROOT_DIR/platform-versions.yaml"
 CHARTS_DIR="$ROOT_DIR/charts"
 
+# Async execution support
+ASYNC_MODE=false
+JSON_OUTPUT=false
+TASK_MANAGER="$SCRIPT_DIR/async-task-manager.sh"
+
 # Load configuration if available
 load_config() {
     if [ -f "$CONFIG_DIR/idp-config.yaml" ]; then
@@ -44,25 +50,85 @@ load_config() {
 }
 
 print_header() {
-    echo -e "\n${BLUE}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║${NC} $(printf "%-60s" "$1") ${BLUE}║${NC}"
-    echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${NC}\n"
+    if [ "$JSON_OUTPUT" = "false" ]; then
+        echo -e "\n${BLUE}╔══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${BLUE}║${NC} $(printf "%-60s" "$1") ${BLUE}║${NC}"
+        echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${NC}\n"
+    fi
 }
 
 print_status() {
-    echo -e "${PURPLE}[INFO]${NC} $1"
+    if [ "$JSON_OUTPUT" = "false" ]; then
+        echo -e "${PURPLE}[INFO]${NC} $1"
+    fi
 }
 
 print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    if [ "$JSON_OUTPUT" = "false" ]; then
+        echo -e "${GREEN}[SUCCESS]${NC} $1"
+    fi
 }
 
 print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    if [ "$JSON_OUTPUT" = "false" ]; then
+        echo -e "${RED}[ERROR]${NC} $1"
+    fi
 }
 
 print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    if [ "$JSON_OUTPUT" = "false" ]; then
+        echo -e "${YELLOW}[WARNING]${NC} $1"
+    fi
+}
+
+# JSON output functions
+output_json() {
+    local status="$1"
+    local message="$2"
+    local data="${3:-{}}"
+    
+    echo "{\"status\": \"$status\", \"message\": \"$message\", \"data\": $data, \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+}
+
+output_json_success() {
+    output_json "success" "$1" "${2:-{}}"
+}
+
+output_json_error() {
+    output_json "error" "$1" "${2:-{}}"
+}
+
+output_json_info() {
+    output_json "info" "$1" "${2:-{}}"
+}
+
+# Async execution wrapper
+execute_async() {
+    local task_name="$1"
+    shift
+    local command="$@"
+    
+    if [ "$ASYNC_MODE" = "true" ] && [ -x "$TASK_MANAGER" ]; then
+        # Execute in background using task manager
+        local result
+        result=$("$TASK_MANAGER" run "$task_name" "$command" 2>&1)
+        
+        if [ "$JSON_OUTPUT" = "true" ]; then
+            echo "$result"
+        else
+            print_status "Task '$task_name' started in background"
+            echo "$result" | grep -E "(task_id|pid)" || true
+        fi
+        return 0
+    else
+        # Execute synchronously
+        eval "$command"
+    fi
+}
+
+# Check if running in async mode
+is_async_mode() {
+    [ "$ASYNC_MODE" = "true" ]
 }
 
 # Check prerequisites
@@ -86,8 +152,72 @@ check_prerequisites() {
     return $errors
 }
 
-# Setup IDP platform
-setup_platform() {
+# Parse command line arguments
+parse_arguments() {
+    PARSED_ARGS=()
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --async)
+                ASYNC_MODE=true
+                shift
+                ;;
+            --json)
+                JSON_OUTPUT=true
+                shift
+                ;;
+            --sync)
+                ASYNC_MODE=false
+                shift
+                ;;
+            --help)
+                show_usage
+                exit 0
+                ;;
+            *)
+                PARSED_ARGS+=("$1")
+                shift
+                ;;
+        esac
+    done
+}
+
+# Usage information
+show_usage() {
+    cat << EOF
+IDP Platform Master Script
+
+USAGE:
+    $0 [COMMAND] [OPTIONS]
+
+COMMANDS:
+    setup                    Setup IDP platform
+    start                    Start platform services
+    stop                     Stop platform services
+    restart                  Restart platform services
+    status                   Show platform status
+    build-backstage          Build Backstage application
+    task-status TASK_NAME    Check async task status
+    task-list                List all async tasks
+    task-cancel TASK_NAME    Cancel running task
+    task-logs TASK_NAME      Show task logs
+
+OPTIONS:
+    --async                  Execute long-running tasks in background
+    --json                   Output results in JSON format
+    --sync                   Force synchronous execution (default)
+    --help                   Show this help message
+
+EXAMPLES:
+    $0 setup --async --json              # Setup in background with JSON output
+    $0 status --json                     # Get status in JSON format
+    $0 task-status platform-setup        # Check async task status
+    $0 build-backstage --async           # Build Backstage in background
+
+EOF
+}
+
+# Setup IDP platform (sync version)
+setup_platform_sync() {
     print_header "Setting up IDP Platform"
     
     print_status "Checking prerequisites..."
@@ -104,6 +234,28 @@ setup_platform() {
         "$SCRIPT_DIR/setup-external-localstack.sh"
     else
         print_warning "LocalStack setup script not found, skipping..."
+    fi
+    
+    # Setup infrastructure (LocalStack + OPA)
+    if [ -f "$SCRIPT_DIR/infrastructure-setup.sh" ]; then
+        print_status "Setting up infrastructure (LocalStack + OPA)..."
+        "$SCRIPT_DIR/infrastructure-setup.sh" setup-infrastructure || {
+            print_warning "Failed to setup infrastructure, but continuing..."
+        }
+        print_success "Infrastructure setup completed"
+    fi
+
+    # Setup authentication personas (if LocalStack is available)
+    if [ -f "$SCRIPT_DIR/auth-management.sh" ] && curl -s http://localhost:4566/health > /dev/null 2>&1; then
+        print_status "Setting up AWS Cognito personas and test users..."
+        "$SCRIPT_DIR/auth-management.sh" setup-full || {
+            print_warning "Failed to setup authentication, but continuing..."
+        }
+        print_success "Authentication setup completed"
+    elif [ ! -f "$SCRIPT_DIR/auth-management.sh" ]; then
+        print_warning "Authentication management script not found, skipping..."
+    else
+        print_warning "LocalStack not available, skipping authentication setup..."
     fi
     
     # Install Istio service mesh first (required for platform)
@@ -205,7 +357,7 @@ setup_platform() {
 }
 
 # Trigger Backstage build via IDP workflows
-build_backstage() {
+build_backstage_actual() {
     print_header "Building Backstage via IDP Workflows"
     
     # Check if Argo Workflows is ready
@@ -328,7 +480,7 @@ EOF
 }
 
 # Start services with intelligent discovery
-start_services() {
+start_services_actual() {
     print_header "Starting Platform Services"
     
     # Service port-forward configurations (using simple approach for sh compatibility)
@@ -646,7 +798,7 @@ EOF
         
         # Trigger sync
         print_status "Triggering ArgoCD sync..."
-        kubectl patch application "$component" -n argocd \\
+        kubectl patch application "$component" -n argocd \
             -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' --type merge
         
         # Wait for sync to complete
@@ -722,12 +874,12 @@ rollback_component() {
             if command -v argocd &> /dev/null; then
                 argocd app rollback "$component" --revision $((-$steps)) || {
                     print_warning "ArgoCD CLI rollback failed, trying manual approach..."
-                    kubectl patch application "$component" -n argocd \\
+                    kubectl patch application "$component" -n argocd \
                         -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' --type merge
                 }
             else
                 print_status "ArgoCD CLI not available, using kubectl approach..."
-                kubectl patch application "$component" -n argocd \\
+                kubectl patch application "$component" -n argocd \
                     -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' --type merge
             fi
             
@@ -759,7 +911,7 @@ component_status() {
             echo -e "\n${BLUE}Kubernetes Resources:${NC}"
             local namespace=$(yq eval ".spec.components.*.${component}.namespace" "$VERSIONS_FILE" 2>/dev/null)
             if [ -n "$namespace" ] && [ "$namespace" != "null" ]; then
-                kubectl get pods -n "$namespace" -l "app.kubernetes.io/name=$component" 2>/dev/null || \\
+                kubectl get pods -n "$namespace" -l "app.kubernetes.io/name=$component" 2>/dev/null || \
                     echo "No pods found for component $component in namespace $namespace"
             fi
         else
@@ -771,21 +923,109 @@ component_status() {
         echo ""
         
         echo -e "${BLUE}ArgoCD Applications:${NC}"
-        kubectl get applications -n argocd -o custom-columns="NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,REVISION:.status.sync.revision" 2>/dev/null || \\
+        kubectl get applications -n argocd -o custom-columns="NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,REVISION:.status.sync.revision" 2>/dev/null || \
             echo "ArgoCD not available or no applications found"
     fi
 }
 
-# Load configuration
+# Async wrapper functions  
+setup_platform() {
+    if is_async_mode; then
+        execute_async "platform-setup" "$0 setup --sync"
+    else
+        setup_platform_sync
+    fi
+}
+
+start_services_main() {
+    if is_async_mode; then
+        execute_async "platform-start" "$0 start --sync" 
+    else
+        start_services_actual
+    fi
+}
+
+build_backstage_main() {
+    if is_async_mode; then
+        execute_async "backstage-build" "$0 build-backstage --sync"
+    else
+        build_backstage_actual
+    fi
+}
+
+# Task management commands
+handle_task_command() {
+    local task_cmd="$1"
+    local task_name="${2:-}"
+    
+    if [ ! -x "$TASK_MANAGER" ]; then
+        if [ "$JSON_OUTPUT" = "true" ]; then
+            output_json_error "Task manager not available"
+        else
+            print_error "Task manager not available at $TASK_MANAGER"
+        fi
+        exit 1
+    fi
+    
+    case "$task_cmd" in
+        "status")
+            if [ -z "$task_name" ]; then
+                if [ "$JSON_OUTPUT" = "true" ]; then
+                    output_json_error "Task name required"
+                else
+                    print_error "Please specify task name"
+                fi
+                exit 1
+            fi
+            "$TASK_MANAGER" status "$task_name" $([ "$JSON_OUTPUT" = "true" ] && echo "--json")
+            ;;
+        "list") 
+            "$TASK_MANAGER" list $([ "$JSON_OUTPUT" = "true" ] && echo "--json")
+            ;;
+        "cancel")
+            if [ -z "$task_name" ]; then
+                if [ "$JSON_OUTPUT" = "true" ]; then
+                    output_json_error "Task name required"
+                else
+                    print_error "Please specify task name"
+                fi
+                exit 1
+            fi
+            "$TASK_MANAGER" cancel "$task_name"
+            ;;
+        "logs")
+            if [ -z "$task_name" ]; then
+                if [ "$JSON_OUTPUT" = "true" ]; then
+                    output_json_error "Task name required"
+                else
+                    print_error "Please specify task name"
+                fi
+                exit 1
+            fi
+            "$TASK_MANAGER" logs "$task_name"
+            ;;
+        *)
+            if [ "$JSON_OUTPUT" = "true" ]; then
+                output_json_error "Unknown task command: $task_cmd"
+            else
+                print_error "Unknown task command: $task_cmd"
+            fi
+            exit 1
+            ;;
+    esac
+}
+
+# Load configuration and parse arguments
 load_config
+parse_arguments "$@"
 
 # Main command processing
-case "${1:-help}" in
+case "${PARSED_ARGS[0]:-help}" in
     "setup")
         setup_platform
         ;;
     "start")
-        start_services
+        start_services_main
         # Keep running until interrupted
         while true; do
             sleep 10
@@ -797,17 +1037,17 @@ case "${1:-help}" in
     "restart")
         stop_services
         sleep 2
-        start_services
+        start_services_main
         ;;
     "status")
-        if [ -n "$2" ]; then
-            component_status "$2"
+        if [ -n "${PARSED_ARGS[1]:-}" ]; then
+            component_status "${PARSED_ARGS[1]}"
         else
             check_status
         fi
         ;;
     "build-backstage")
-        build_backstage
+        build_backstage_main
         ;;
     "deploy-templates")
         if [ -f "$SCRIPT_DIR/deploy-workflow-templates.sh" ]; then
@@ -821,7 +1061,7 @@ case "${1:-help}" in
         "$SCRIPT_DIR/idp-setup-wizard.sh"
         ;;
     "credentials")
-        case "$2" in
+        case "${PARSED_ARGS[1]:-}" in
             "setup"|"")
                 "$SCRIPT_DIR/credential-manager.sh" interactive
                 ;;
@@ -838,21 +1078,21 @@ case "${1:-help}" in
         esac
         ;;
     "versions")
-        case "$2" in
+        case "${PARSED_ARGS[1]:-}" in
             "list")
-                list_versions "$3"
+                list_versions "${PARSED_ARGS[2]:-}"
                 ;;
             *)
-                list_versions "$2"
+                list_versions "${PARSED_ARGS[1]:-}"
                 ;;
         esac
         ;;
     "update")
-        if [ "$3" = "--version" ] && [ -n "$4" ]; then
-            if [ "$5" = "--dry-run" ]; then
-                update_component "$2" "$4" "true"
+        if [ "${PARSED_ARGS[2]:-}" = "--version" ] && [ -n "${PARSED_ARGS[3]:-}" ]; then
+            if [ "${PARSED_ARGS[4]:-}" = "--dry-run" ]; then
+                update_component "${PARSED_ARGS[1]}" "${PARSED_ARGS[3]}" "true"
             else
-                update_component "$2" "$4" "false"
+                update_component "${PARSED_ARGS[1]}" "${PARSED_ARGS[3]}" "false"
             fi
         else
             print_error "Usage: $0 update <component> --version <version> [--dry-run]"
@@ -860,17 +1100,29 @@ case "${1:-help}" in
         fi
         ;;
     "rollback")
-        if [ "$3" = "--steps" ] && [ -n "$4" ]; then
-            rollback_component "$2" "$4"
+        if [ "${PARSED_ARGS[2]:-}" = "--steps" ] && [ -n "${PARSED_ARGS[3]:-}" ]; then
+            rollback_component "${PARSED_ARGS[1]}" "${PARSED_ARGS[3]}"
         else
-            rollback_component "$2"
+            rollback_component "${PARSED_ARGS[1]}"
         fi
+        ;;
+    "task-status")
+        handle_task_command "status" "${PARSED_ARGS[1]:-}"
+        ;;
+    "task-list")
+        handle_task_command "list"
+        ;;
+    "task-cancel")
+        handle_task_command "cancel" "${PARSED_ARGS[1]:-}"
+        ;;
+    "task-logs")
+        handle_task_command "logs" "${PARSED_ARGS[1]:-}"
         ;;
     "help"|"--help"|"-h")
         show_usage
         ;;
     *)
-        print_error "Unknown command: $1"
+        print_error "Unknown command: ${PARSED_ARGS[0]:-}"
         show_usage
         exit 1
         ;;
