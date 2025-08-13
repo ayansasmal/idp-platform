@@ -1,0 +1,115 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-server-config
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-server
+    app.kubernetes.io/part-of: argocd
+data:
+  # Enable TLS for ArgoCD server
+  tls.config: |
+    certs:
+      argocd-server.argocd.svc.cluster.local:
+        certFile: /etc/certs/tls.crt
+        keyFile: /etc/certs/tls.key
+    minVersion: "1.2"
+    maxVersion: "1.3"
+    cipherSuites:
+      - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+      - "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305"
+      - "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+    
+  # URL configuration for proper certificate usage
+  url: https://argocd-server.argocd.svc.cluster.local:443
+  
+  # Application in any namespace
+  application.instanceLabelKey: argocd.argoproj.io/instance
+  
+  # Server additional settings
+  server.insecure: "false"
+  server.grpc.web: "true"
+  server.enable.proxy.extension: "true"
+  
+  # Repository server settings
+  reposerver.parallelism.limit: "0"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-ca-certificates
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-ca-certificates
+    app.kubernetes.io/part-of: argocd
+data:
+  # This will be populated by a Job that copies the CA certificate
+  ca.crt: ""
+---
+# Job to copy CA certificate to ArgoCD namespace
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: copy-argocd-ca-cert
+  namespace: argocd
+  labels:
+    app: argocd-ca-setup
+spec:
+  template:
+    spec:
+      serviceAccountName: argocd-ca-cert-copier
+      containers:
+      - name: ca-cert-copier
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Waiting for CA certificate to be ready..."
+          
+          # Wait for the CA certificate secret to be available
+          while ! kubectl get secret argocd-ca-key-pair -n cert-manager &>/dev/null; do
+            echo "Waiting for CA certificate secret..."
+            sleep 5
+          done
+          
+          echo "CA certificate found, copying to ArgoCD namespace..."
+          
+          # Extract CA certificate
+          CA_CERT=$(kubectl get secret argocd-ca-key-pair -n cert-manager -o jsonpath='{.data.tls\.crt}')
+          
+          # Update the ConfigMap
+          kubectl patch configmap argocd-ca-certificates -n argocd --type merge -p "{\"data\":{\"ca.crt\":\"$CA_CERT\"}}"
+          
+          echo "CA certificate copied successfully"
+      restartPolicy: OnFailure
+  backoffLimit: 5
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argocd-ca-cert-copier
+  namespace: argocd
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argocd-ca-cert-copier
+rules:
+- apiGroups: [""]
+  resources: ["secrets", "configmaps"]
+  verbs: ["get", "list", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argocd-ca-cert-copier
+subjects:
+- kind: ServiceAccount
+  name: argocd-ca-cert-copier
+  namespace: argocd
+roleRef:
+  kind: ClusterRole
+  name: argocd-ca-cert-copier
+  apiGroup: rbac.authorization.k8s.io

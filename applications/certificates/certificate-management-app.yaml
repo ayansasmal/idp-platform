@@ -1,0 +1,80 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: certificate-management
+  namespace: argocd
+  labels:
+    app: certificate-management
+    component: platform-certificates
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ayansasmal/idp-platform.git
+    targetRevision: main
+    path: infrastructure/certificates
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+  revisionHistoryLimit: 5
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: certificates-project
+  namespace: argocd
+spec:
+  description: Certificate Management for IDP Platform
+  sourceRepos:
+  - 'https://github.com/ayansasmal/idp-platform.git'
+  - 'https://charts.jetstack.io'
+  destinations:
+  - namespace: cert-manager
+    server: https://kubernetes.default.svc
+  - namespace: argocd
+    server: https://kubernetes.default.svc
+  - namespace: backstage
+    server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+  - group: ''
+    kind: Namespace
+  - group: cert-manager.io
+    kind: ClusterIssuer
+  - group: rbac.authorization.k8s.io
+    kind: ClusterRole
+  - group: rbac.authorization.k8s.io
+    kind: ClusterRoleBinding
+  namespaceResourceWhitelist:
+  - group: ''
+    kind: Service
+  - group: ''
+    kind: ConfigMap
+  - group: ''
+    kind: Secret
+  - group: ''
+    kind: ServiceAccount
+  - group: apps
+    kind: Deployment
+  - group: batch
+    kind: Job
+  - group: batch
+    kind: CronJob
+  - group: cert-manager.io
+    kind: Certificate
+  - group: cert-manager.io
+    kind: Issuer
+  roles:
+  - name: admin
+    description: Admin privileges for certificate management
+    policies:
+    - p, proj:certificates-project:admin, applications, *, certificates-project/*, allow
+    - p, proj:certificates-project:admin, repositories, *, *, allow
+    groups:
+    - idp-platform-admin

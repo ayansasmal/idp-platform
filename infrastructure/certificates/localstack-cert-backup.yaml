@@ -1,0 +1,216 @@
+# Job to backup certificates to LocalStack Secrets Manager
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: argocd-cert-backup
+  namespace: cert-manager
+  labels:
+    app: cert-backup
+    component: localstack-integration
+spec:
+  schedule: "0 2 * * *" # Daily at 2 AM
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: cert-backup-service-account
+          containers:
+          - name: cert-backup
+            image: amazon/aws-cli:latest
+            env:
+            - name: AWS_ACCESS_KEY_ID
+              value: "test"
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "test"
+            - name: AWS_DEFAULT_REGION
+              value: "us-east-1"
+            - name: AWS_ENDPOINT_URL
+              value: "http://localstack:4566"
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Starting ArgoCD certificate backup to LocalStack..."
+              
+              # Install kubectl in the container
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl
+              mv kubectl /usr/local/bin/
+              
+              # Check if LocalStack is reachable
+              if ! aws --endpoint-url=http://localstack:4566 sts get-caller-identity &>/dev/null; then
+                echo "LocalStack not reachable, skipping backup"
+                exit 0
+              fi
+              
+              # Backup CA certificate
+              if kubectl get secret argocd-ca-key-pair -n cert-manager &>/dev/null; then
+                echo "Backing up ArgoCD CA certificate..."
+                
+                CA_CERT=$(kubectl get secret argocd-ca-key-pair -n cert-manager -o jsonpath='{.data.tls\.crt}')
+                CA_KEY=$(kubectl get secret argocd-ca-key-pair -n cert-manager -o jsonpath='{.data.tls\.key}')
+                
+                # Store in LocalStack Secrets Manager
+                aws --endpoint-url=http://localstack:4566 secretsmanager create-secret \
+                  --name "argocd-ca-certificate" \
+                  --description "ArgoCD CA Certificate for IDP Platform" \
+                  --secret-string "{\"ca.crt\":\"$CA_CERT\",\"ca.key\":\"$CA_KEY\"}" \
+                  --region us-east-1 || \
+                aws --endpoint-url=http://localstack:4566 secretsmanager update-secret \
+                  --secret-id "argocd-ca-certificate" \
+                  --secret-string "{\"ca.crt\":\"$CA_CERT\",\"ca.key\":\"$CA_KEY\"}" \
+                  --region us-east-1
+                
+                echo "CA certificate backed up to LocalStack"
+              fi
+              
+              # Backup server certificate
+              if kubectl get secret argocd-server-tls -n argocd &>/dev/null; then
+                echo "Backing up ArgoCD server certificate..."
+                
+                SERVER_CERT=$(kubectl get secret argocd-server-tls -n argocd -o jsonpath='{.data.tls\.crt}')
+                SERVER_KEY=$(kubectl get secret argocd-server-tls -n argocd -o jsonpath='{.data.tls\.key}')
+                
+                aws --endpoint-url=http://localstack:4566 secretsmanager create-secret \
+                  --name "argocd-server-certificate" \
+                  --description "ArgoCD Server Certificate for IDP Platform" \
+                  --secret-string "{\"tls.crt\":\"$SERVER_CERT\",\"tls.key\":\"$SERVER_KEY\"}" \
+                  --region us-east-1 || \
+                aws --endpoint-url=http://localstack:4566 secretsmanager update-secret \
+                  --secret-id "argocd-server-certificate" \
+                  --secret-string "{\"tls.crt\":\"$SERVER_CERT\",\"tls.key\":\"$SERVER_KEY\"}" \
+                  --region us-east-1
+                
+                echo "Server certificate backed up to LocalStack"
+              fi
+              
+              echo "Certificate backup completed successfully"
+          restartPolicy: OnFailure
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cert-backup-service-account
+  namespace: cert-manager
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cert-backup-reader
+rules:
+- apiGroups: [""]
+  resources: ["secrets", "configmaps"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cert-backup-reader
+subjects:
+- kind: ServiceAccount
+  name: cert-backup-service-account
+  namespace: cert-manager
+roleRef:
+  kind: ClusterRole
+  name: cert-backup-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# One-time job to restore certificates from LocalStack on startup
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: argocd-cert-restore
+  namespace: cert-manager
+  labels:
+    app: cert-restore
+    component: localstack-integration
+spec:
+  template:
+    spec:
+      serviceAccountName: cert-restore-service-account
+      containers:
+      - name: cert-restore
+        image: amazon/aws-cli:latest
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          value: "test"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "test"
+        - name: AWS_DEFAULT_REGION
+          value: "us-east-1"
+        - name: AWS_ENDPOINT_URL
+          value: "http://localstack:4566"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Starting ArgoCD certificate restore from LocalStack..."
+          
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          mv kubectl /usr/local/bin/
+          
+          # Check if LocalStack is reachable
+          if ! aws --endpoint-url=http://localstack:4566 sts get-caller-identity &>/dev/null; then
+            echo "LocalStack not reachable, skipping restore"
+            exit 0
+          fi
+          
+          # Try to restore CA certificate if it doesn't exist
+          if ! kubectl get secret argocd-ca-key-pair -n cert-manager &>/dev/null; then
+            echo "Attempting to restore ArgoCD CA certificate from LocalStack..."
+            
+            if aws --endpoint-url=http://localstack:4566 secretsmanager describe-secret --secret-id "argocd-ca-certificate" &>/dev/null; then
+              SECRET_VALUE=$(aws --endpoint-url=http://localstack:4566 secretsmanager get-secret-value --secret-id "argocd-ca-certificate" --query SecretString --output text)
+              
+              CA_CERT=$(echo "$SECRET_VALUE" | jq -r '.["ca.crt"]')
+              CA_KEY=$(echo "$SECRET_VALUE" | jq -r '.["ca.key"]')
+              
+              kubectl create secret tls argocd-ca-key-pair -n cert-manager \
+                --cert=<(echo "$CA_CERT" | base64 -d) \
+                --key=<(echo "$CA_KEY" | base64 -d)
+              
+              echo "CA certificate restored from LocalStack"
+            else
+              echo "No CA certificate found in LocalStack, will be created fresh"
+            fi
+          else
+            echo "CA certificate already exists, skipping restore"
+          fi
+          
+          echo "Certificate restore process completed"
+      restartPolicy: OnFailure
+  backoffLimit: 3
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cert-restore-service-account
+  namespace: cert-manager
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cert-restore-writer
+rules:
+- apiGroups: [""]
+  resources: ["secrets", "configmaps"]
+  verbs: ["get", "list", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cert-restore-writer
+subjects:
+- kind: ServiceAccount
+  name: cert-restore-service-account
+  namespace: cert-manager
+roleRef:
+  kind: ClusterRole
+  name: cert-restore-writer
+  apiGroup: rbac.authorization.k8s.io

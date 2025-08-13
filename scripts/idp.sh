@@ -203,6 +203,10 @@ COMMANDS:
     status                   Show platform status
     build-backstage          Build Backstage application
     build-unleash            Build and deploy Unleash OSS feature flag service
+    setup-certificates       Setup ArgoCD SSL certificates with cert-manager
+    verify-certificates      Verify SSL certificate configuration
+    extract-certificates     Extract certificates for local development
+    setup-local-dev          Setup complete local development environment
     task-status TASK_NAME    Check async task status
     task-list                List all async tasks
     task-cancel TASK_NAME    Cancel running task
@@ -296,6 +300,17 @@ setup_platform_sync() {
     kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=300s || {
         print_warning "ArgoCD deployment timeout, but continuing..."
     }
+    
+    # Setup ArgoCD SSL certificates for secure communication
+    print_status "Setting up ArgoCD SSL certificates..."
+    if [ -f "$SCRIPT_DIR/setup-argocd-certificates.sh" ]; then
+        "$SCRIPT_DIR/setup-argocd-certificates.sh" setup || {
+            print_warning "ArgoCD certificate setup failed, but continuing with insecure mode..."
+        }
+        print_success "ArgoCD SSL certificates configured"
+    else
+        print_warning "ArgoCD certificate setup script not found, running in insecure mode"
+    fi
     
     # Note: Argo Workflows will be deployed via ArgoCD application (Helm chart)
     # Setup S3 artifacts for Argo Workflows (if script exists)
@@ -709,6 +724,10 @@ show_usage() {
     echo -e "${PURPLE}Application Management Commands:${NC}"
     echo -e "  ${GREEN}build-backstage${NC}     Build Backstage app using IDP workflows"
     echo -e "  ${GREEN}build-unleash${NC}       Build and deploy Unleash OSS feature flag service"
+    echo -e "  ${GREEN}setup-certificates${NC}  Setup ArgoCD SSL certificates with cert-manager"
+    echo -e "  ${GREEN}verify-certificates${NC} Verify SSL certificate configuration"
+    echo -e "  ${GREEN}extract-certificates${NC} Extract certificates for local development"
+    echo -e "  ${GREEN}setup-local-dev${NC}     Setup complete local development environment"
     echo -e "  ${GREEN}deploy-templates${NC}    Deploy/redeploy Argo Workflows templates"
     echo -e ""
     echo -e "${PURPLE}Credential Management Commands:${NC} ${CYAN}[NEW]${NC}"
@@ -1204,6 +1223,38 @@ case "${PARSED_ARGS[0]:-help}" in
         ;;
     "build-unleash")
         build_unleash_main
+        ;;
+    "setup-certificates")
+        if [ -f "$SCRIPT_DIR/setup-argocd-certificates.sh" ]; then
+            "$SCRIPT_DIR/setup-argocd-certificates.sh" setup
+        else
+            print_error "Certificate setup script not found"
+            exit 1
+        fi
+        ;;
+    "verify-certificates")
+        if [ -f "$SCRIPT_DIR/setup-argocd-certificates.sh" ]; then
+            "$SCRIPT_DIR/setup-argocd-certificates.sh" verify
+        else
+            print_error "Certificate setup script not found"
+            exit 1
+        fi
+        ;;
+    "extract-certificates")
+        if [ -f "$SCRIPT_DIR/extract-certificates.sh" ]; then
+            "$SCRIPT_DIR/extract-certificates.sh" extract
+        else
+            print_error "Certificate extraction script not found"
+            exit 1
+        fi
+        ;;
+    "setup-local-dev")
+        if [ -f "$SCRIPT_DIR/setup-local-dev.sh" ]; then
+            "$SCRIPT_DIR/setup-local-dev.sh" setup
+        else
+            print_error "Local development setup script not found"
+            exit 1
+        fi
         ;;
     "deploy-templates")
         if [ -f "$SCRIPT_DIR/deploy-workflow-templates.sh" ]; then

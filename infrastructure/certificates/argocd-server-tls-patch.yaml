@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argocd-server
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-server
+    app.kubernetes.io/component: server
+spec:
+  template:
+    spec:
+      containers:
+      - name: argocd-server
+        # Add certificate volume mounts
+        volumeMounts:
+        - name: argocd-server-tls-cert
+          mountPath: /etc/certs
+          readOnly: true
+        - name: argocd-ca-cert
+          mountPath: /etc/ca-certs
+          readOnly: true
+        env:
+        - name: ARGOCD_SERVER_INSECURE
+          value: "false"
+        - name: ARGOCD_SERVER_TLS_CONFIG
+          value: /etc/certs
+        command:
+        - argocd-server
+        - --staticassets
+        - /shared/app
+        - --repo-server
+        - argocd-repo-server:8081
+        - --dex-server
+        - http://argocd-dex-server:5556
+        - --logformat
+        - text
+        - --loglevel
+        - info
+        - --redis
+        - argocd-redis:6379
+        - --server-crt-file
+        - /etc/certs/tls.crt
+        - --server-key-file
+        - /etc/certs/tls.key
+        - --tls-config-file
+        - /tmp/argocd-server-config/tls.config
+      volumes:
+      - name: argocd-server-tls-cert
+        secret:
+          secretName: argocd-server-tls
+          defaultMode: 0444
+      - name: argocd-ca-cert
+        configMap:
+          name: argocd-ca-certificates
+          defaultMode: 0444
+---
+# Service patch to use HTTPS
+apiVersion: v1
+kind: Service
+metadata:
+  name: argocd-server
+  namespace: argocd
+spec:
+  ports:
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 8080
+  - name: grpc
+    port: 443
+    protocol: TCP
+    targetPort: 8080
+---
+# Service for internal gRPC communication
+apiVersion: v1
+kind: Service
+metadata:
+  name: argocd-server-grpc
+  namespace: argocd
+  labels:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/name: argocd-server-grpc
+    app.kubernetes.io/part-of: argocd
+spec:
+  type: ClusterIP
+  ports:
+  - name: grpc
+    port: 443
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app.kubernetes.io/name: argocd-server

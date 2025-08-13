@@ -1,0 +1,77 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: argocd-server-tls
+  namespace: argocd
+  labels:
+    app: argocd-server
+    component: certificate
+spec:
+  secretName: argocd-server-tls
+  duration: 2160h # 90 days
+  renewBefore: 360h # 15 days
+  subject:
+    organizationalUnits:
+      - "IDP Platform"
+    organizations:
+      - "ArgoCD Server"
+    countries:
+      - "US"
+  commonName: argocd-server.argocd.svc.cluster.local
+  dnsNames:
+  - argocd-server
+  - argocd-server.argocd
+  - argocd-server.argocd.svc
+  - argocd-server.argocd.svc.cluster.local
+  - localhost
+  - argocd.local
+  - argocd-ui.local
+  ipAddresses:
+  - 127.0.0.1
+  - 10.96.0.1
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: argocd-ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+# Certificate for ArgoCD gRPC API (used by CLI and other tools)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: argocd-grpc-tls
+  namespace: argocd
+  labels:
+    app: argocd-server
+    component: grpc-certificate
+spec:
+  secretName: argocd-grpc-tls
+  duration: 2160h # 90 days
+  renewBefore: 360h # 15 days
+  subject:
+    organizationalUnits:
+      - "IDP Platform"
+    organizations:
+      - "ArgoCD gRPC Server"
+    countries:
+      - "US"
+  commonName: argocd-server-grpc.argocd.svc.cluster.local
+  dnsNames:
+  - argocd-server
+  - argocd-server.argocd
+  - argocd-server.argocd.svc
+  - argocd-server.argocd.svc.cluster.local
+  - localhost
+  - argocd-grpc.local
+  ipAddresses:
+  - 127.0.0.1
+  - 10.96.0.1
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: argocd-ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io

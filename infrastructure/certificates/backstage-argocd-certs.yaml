@@ -1,0 +1,113 @@
+# ConfigMap to share ArgoCD CA certificate with Backstage
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-ca-certificate
+  namespace: backstage
+  labels:
+    app: backstage
+    component: argocd-integration
+data:
+  ca.crt: "" # Will be populated by the cert-sync job
+---
+# Job to sync ArgoCD CA certificate to Backstage namespace
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sync-argocd-ca-to-backstage
+  namespace: backstage
+  labels:
+    app: backstage-ca-setup
+spec:
+  template:
+    spec:
+      serviceAccountName: backstage-ca-cert-syncer
+      containers:
+      - name: ca-cert-syncer
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Syncing ArgoCD CA certificate to Backstage namespace..."
+          
+          # Wait for the CA certificate to be available in ArgoCD namespace
+          while ! kubectl get configmap argocd-ca-certificates -n argocd &>/dev/null; do
+            echo "Waiting for ArgoCD CA certificate ConfigMap..."
+            sleep 5
+          done
+          
+          # Get CA certificate from ArgoCD namespace
+          CA_CERT=$(kubectl get configmap argocd-ca-certificates -n argocd -o jsonpath='{.data.ca\.crt}')
+          
+          if [ -z "$CA_CERT" ] || [ "$CA_CERT" = "null" ]; then
+            echo "CA certificate is empty, waiting..."
+            sleep 10
+            CA_CERT=$(kubectl get configmap argocd-ca-certificates -n argocd -o jsonpath='{.data.ca\.crt}')
+          fi
+          
+          if [ ! -z "$CA_CERT" ] && [ "$CA_CERT" != "null" ]; then
+            # Update Backstage ConfigMap
+            kubectl patch configmap argocd-ca-certificate -n backstage --type merge -p "{\"data\":{\"ca.crt\":\"$CA_CERT\"}}"
+            echo "ArgoCD CA certificate synced to Backstage successfully"
+          else
+            echo "Failed to get CA certificate, retrying..."
+            exit 1
+          fi
+      restartPolicy: OnFailure
+  backoffLimit: 10
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backstage-ca-cert-syncer
+  namespace: backstage
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: backstage-ca-cert-syncer
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backstage-ca-cert-syncer
+subjects:
+- kind: ServiceAccount
+  name: backstage-ca-cert-syncer
+  namespace: backstage
+roleRef:
+  kind: ClusterRole
+  name: backstage-ca-cert-syncer
+  apiGroup: rbac.authorization.k8s.io
+---
+# Backstage deployment patch to mount CA certificate
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backstage
+  namespace: backstage
+spec:
+  template:
+    spec:
+      containers:
+      - name: backstage
+        volumeMounts:
+        - name: argocd-ca-cert
+          mountPath: /etc/ssl/argocd
+          readOnly: true
+        env:
+        - name: NODE_EXTRA_CA_CERTS
+          value: /etc/ssl/argocd/ca.crt
+        - name: ARGOCD_CA_CERT_PATH
+          value: /etc/ssl/argocd/ca.crt
+      volumes:
+      - name: argocd-ca-cert
+        configMap:
+          name: argocd-ca-certificate
+          defaultMode: 0444

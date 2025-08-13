@@ -210,6 +210,63 @@ The platform is now production-ready with comprehensive automation! 🎉
 
 **Result**: Complete end-to-end automation with simplified developer interface!
 
+## 🔐 **ArgoCD SSL Certificate Management (JUST COMPLETED)**
+
+**Status**: Production-ready SSL certificate infrastructure with cert-manager integration
+
+### **Complete Certificate Management System**
+- **cert-manager Integration**: Automated certificate generation, renewal, and lifecycle management  
+- **Self-Signed CA**: Dedicated Certificate Authority for ArgoCD and platform services
+- **ArgoCD HTTPS**: Secure TLS communication replacing insecure mode
+- **Backstage Integration**: Trusted certificate sharing for API communication
+- **LocalStack Backup**: Certificate persistence via AWS Secrets Manager emulation
+
+### **Automated Certificate Lifecycle**
+1. **Platform Setup**: `./scripts/idp.sh setup` automatically configures certificates
+2. **cert-manager Installation**: Deploys via ArgoCD application with Helm chart  
+3. **CA Generation**: Creates self-signed root CA for platform services
+4. **ArgoCD Certificates**: Server and gRPC certificates with proper DNS names
+5. **Backstage Trust**: Automatic CA certificate synchronization for API calls
+6. **LocalStack Storage**: Daily backup and startup restore of certificates
+
+### **Certificate Commands**
+```bash
+# Automatic certificate setup during platform deployment
+./scripts/idp.sh setup  
+
+# Manual certificate operations
+./scripts/idp.sh setup-certificates      # Setup certificates manually
+./scripts/idp.sh verify-certificates     # Verify certificate status
+
+# Direct certificate management
+./scripts/setup-argocd-certificates.sh setup
+./scripts/setup-argocd-certificates.sh verify
+```
+
+### **Integration Benefits**
+- **Secure ArgoCD Communication**: HTTPS instead of insecure mode
+- **Backstage API Trust**: Eliminates self-signed certificate errors  
+- **Production Ready**: Proper TLS configuration with certificate validation
+- **Automatic Renewal**: cert-manager handles certificate lifecycle (90-day server certs, 1-year CA)
+- **Platform Consistency**: Unified certificate management across all services
+- **LocalStack Integration**: Certificate backup/restore for development consistency
+
+### **Certificate Architecture**
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   cert-manager  │    │   ArgoCD CA     │    │ ArgoCD Server   │
+│   (Automated)   │───▶│   Certificate   │───▶│   Certificate   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                              │
+                              ▼
+                       ┌─────────────────┐    ┌─────────────────┐
+                       │   Backstage     │    │   LocalStack    │  
+                       │   CA Trust      │    │   Backup        │
+                       └─────────────────┘    └─────────────────┘
+```
+
+**The platform now provides enterprise-grade TLS security for all ArgoCD communications!** 🔐
+
 ### 🎯 **Unleash OSS Feature Flag Integration (JUST COMPLETED)**
 
 **Status**: Fully integrated feature flag management system

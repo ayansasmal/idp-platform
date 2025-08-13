@@ -1,0 +1,8 @@
+# Exclude all certificate files from git
+*.crt
+*.pem
+*.key
+*.p12
+*.jks
+certificate-info.json
+README.md

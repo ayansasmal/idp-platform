@@ -1,0 +1,52 @@
+# Backstage ArgoCD Integration Configuration Example
+# This file shows how to configure Backstage to use ArgoCD with custom certificates
+
+# Copy this file to your Backstage app-config.local.yaml and modify as needed
+
+argocd:
+  # ArgoCD server configuration with custom certificates
+  servers:
+    # Production ArgoCD server (via port-forward)
+    - url: https://localhost:8443
+      name: argocd-prod
+      username: admin
+      password: ${ARGOCD_PASSWORD}
+      # Use the extracted CA certificate
+      ca: |
+        -----BEGIN CERTIFICATE-----
+        # Content from .certs/argocd-ca.crt
+        # Run ./scripts/idp.sh extract-certificates to generate
+        -----END CERTIFICATE-----
+
+    # Alternative: Direct cluster access (requires kubectl proxy or port-forward)
+    - url: https://argocd-server.argocd.svc.cluster.local:443
+      name: argocd-cluster
+      username: admin
+      password: ${ARGOCD_PASSWORD}
+      # Use CA certificate from file
+      caFile: "${PWD}/.certs/argocd-ca.crt"
+
+# Backend configuration for ArgoCD plugin
+backend:
+  csp:
+    # Allow connections to ArgoCD server
+    connect-src: 
+      - "'self'"
+      - "https://localhost:8443"
+      - "https://argocd-server.argocd.svc.cluster.local"
+
+# Environment variables you should set
+# ARGOCD_PASSWORD=<get from: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d>
+# NODE_EXTRA_CA_CERTS=.certs/argocd-ca.crt
+
+# For development with extracted certificates:
+# 1. Run: ./scripts/idp.sh extract-certificates
+# 2. Set: export NODE_EXTRA_CA_CERTS=$(pwd)/.certs/argocd-ca.crt
+# 3. Start: kubectl port-forward -n argocd svc/argocd-server 8443:443
+# 4. Access: https://localhost:8443 (with your Backstage app trusting the CA)
+
+# Production considerations:
+# - Use environment variables for passwords
+# - Store certificates securely
+# - Implement certificate rotation monitoring
+# - Use proper RBAC for ArgoCD access
