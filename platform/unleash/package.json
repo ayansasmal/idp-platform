@@ -1,0 +1,35 @@
+{
+  "name": "unleash-server",
+  "version": "5.7.0",
+  "description": "Unleash is an open source feature flag & toggle system, that gives you a great overview over all feature toggles across all your applications and services.",
+  "keywords": [
+    "unleash",
+    "feature toggle",
+    "feature flag",
+    "continuous deployment"
+  ],
+  "main": "./lib/server.js",
+  "scripts": {
+    "start": "node lib/server.js",
+    "dev": "NODE_ENV=development node lib/server.js",
+    "prebuild": "rm -rf lib",
+    "build": "tsc",
+    "postbuild": "copyfiles -u 1 src/**/*.mustache lib/",
+    "test": "NODE_ENV=test jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/unleash/unleash"
+  },
+  "bugs": {
+    "url": "https://github.com/unleash/unleash/issues"
+  },
+  "homepage": "https://www.getunleash.io",
+  "dependencies": {
+    "unleash-server": "5.7.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "Apache-2.0"
+}

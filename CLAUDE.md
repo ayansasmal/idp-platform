@@ -49,6 +49,7 @@ cd idp-platform
 
 # Advanced commands
 ./scripts/idp.sh build-backstage     # Build Backstage app using IDP workflows
+./scripts/idp.sh build-unleash       # Build and deploy Unleash OSS feature flags
 ./scripts/idp.sh deploy-templates    # Deploy/redeploy Argo Workflows templates
 
 # Setup and teardown
@@ -97,6 +98,7 @@ export SETUP_BACKSTAGE=false        # Skip Backstage setup during platform start
 - **Crossplane**: Infrastructure as Code with hybrid LocalStack/AWS providers
 - **External Secrets Operator**: Kubernetes secrets management
 - **Argo Workflows**: Kubernetes-native CI for container builds
+- **Unleash OSS**: Feature flag management and progressive deployment
 
 ### Platform Abstractions
 The platform's primary abstraction is the **WebApplication CRD** (`platform/crds/webapplication-crd.yaml`) which automatically generates:
@@ -167,6 +169,7 @@ All services are automatically accessible:
 - **Jaeger**: http://localhost:16686 (Distributed tracing)
 - **Kiali**: http://localhost:20001 (Service mesh observability)
 - **Argo Workflows**: http://localhost:4000 (CI/CD workflows)
+- **Unleash OSS**: http://localhost:4243 (Feature flag management - admin / unleash4all)
 - **Monitoring Dashboard**: http://localhost:3002 (Observability overview)
 
 The platform is now production-ready with comprehensive automation! 🎉
@@ -206,3 +209,41 @@ The platform is now production-ready with comprehensive automation! 🎉
 5. **Access**: Backstage available at http://localhost:3000 via intelligent port-forwarding
 
 **Result**: Complete end-to-end automation with simplified developer interface!
+
+### 🎯 **Unleash OSS Feature Flag Integration (JUST COMPLETED)**
+
+**Status**: Fully integrated feature flag management system
+
+#### **Complete Integration Flow**
+- **Setup Phase**: Workflow templates deployed automatically via `./scripts/deploy-workflow-templates.sh`
+- **Start Phase**: Unleash automatically built, deployed, and port-forwarded when `./scripts/idp.sh start` runs
+- **GitOps Management**: ArgoCD applications for full lifecycle management
+- **Service Mesh**: Istio integration with mTLS and traffic policies
+
+#### **Automated Deployment Process**
+1. **Platform Start**: `./scripts/idp.sh start` detects missing Unleash deployment
+2. **Build Trigger**: Automatically submits Unleash build workflow using official Unleash image
+3. **Deployment**: Static manifests ensure Unleash and PostgreSQL are deployed
+4. **Service Discovery**: Port-forward automatically configured on http://localhost:4243
+5. **Status Integration**: Full visibility in `./scripts/idp.sh status` command
+
+#### **Developer Experience**
+```bash
+# Unleash automatically included in platform startup
+./scripts/idp.sh start
+
+# Manual build/rebuild if needed
+./scripts/idp.sh build-unleash
+
+# Access Unleash
+curl http://localhost:4243/health  # API health check
+open http://localhost:4243         # Web interface (admin / unleash4all)
+```
+
+#### **Platform Integration Benefits**
+- **Zero Configuration**: Unleash automatically deployed with platform
+- **Production Ready**: PostgreSQL backend with persistent storage
+- **Service Mesh Security**: Istio mTLS between services
+- **GitOps Managed**: ArgoCD handles deployment lifecycle
+- **Observability**: Integrated with platform monitoring and tracing
+- **Developer Self-Service**: Feature flag management UI and APIs

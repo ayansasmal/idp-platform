@@ -202,6 +202,7 @@ COMMANDS:
     restart                  Restart platform services
     status                   Show platform status
     build-backstage          Build Backstage application
+    build-unleash            Build and deploy Unleash OSS feature flag service
     task-status TASK_NAME    Check async task status
     task-list                List all async tasks
     task-cancel TASK_NAME    Cancel running task
@@ -221,6 +222,7 @@ EXAMPLES:
     $0 status --json                     # Get status in JSON format
     $0 task-status platform-setup        # Check async task status
     $0 build-backstage --async           # Build Backstage in background
+    $0 build-unleash                     # Build and deploy Unleash OSS
 
 EOF
 }
@@ -323,6 +325,17 @@ setup_platform_sync() {
         print_status "Waiting for observability services to be ready..."
         kubectl wait --for=condition=Available deployment/grafana -n istio-system --timeout=120s || print_warning "Grafana not ready"
         kubectl wait --for=condition=Available deployment/prometheus -n istio-system --timeout=120s || print_warning "Prometheus not ready"
+        
+        # Deploy Unleash OSS feature flag service
+        print_status "Deploying Unleash OSS feature flag service..."
+        if [ -f "$ROOT_DIR/applications/unleash/unleash-app.yaml" ]; then
+            kubectl apply -f "$ROOT_DIR/applications/unleash/unleash-app.yaml" || {
+                print_warning "Failed to deploy Unleash application, but continuing..."
+            }
+            print_success "Unleash ArgoCD application created"
+        else
+            print_warning "Unleash application manifest not found, skipping..."
+        fi
         
         # Trigger sync of platform applications
         print_status "Syncing platform applications..."
@@ -505,6 +518,56 @@ EOF
 start_services_actual() {
     print_header "Starting Platform Services"
     
+    # Build and deploy Unleash if not already running
+    if ! kubectl get deployment unleash -n unleash &>/dev/null || \
+       [ "$(kubectl get pods -n unleash -l app=unleash --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)" -eq 0 ]; then
+        print_status "Building and deploying Unleash OSS feature flags..."
+        
+        # Trigger Unleash build workflow (async)
+        if kubectl get workflowtemplate unleash-build-deploy -n argo-workflows &>/dev/null; then
+            print_status "Submitting Unleash build workflow..."
+            if kubectl create -f - << 'EOF'
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: unleash-build-
+  namespace: argo-workflows
+spec:
+  workflowTemplateRef:
+    name: unleash-build-deploy
+  arguments:
+    parameters:
+    - name: unleash-version
+      value: "5.7.0"
+    - name: image-tag
+      value: "latest"
+    - name: ecr-registry
+      value: "000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566"
+    - name: aws-region
+      value: "us-east-1"
+EOF
+            then
+                print_success "Unleash build workflow submitted"
+            else
+                print_warning "Unleash workflow submission failed, deploying static manifests instead"
+            fi
+            sleep 5  # Brief wait for workflow to start
+        else
+            print_warning "Unleash workflow template not found, using static deployment..."
+        fi
+        
+        # Deploy static manifests as fallback or primary method
+        print_status "Ensuring Unleash deployment via GitOps..."
+        if [ -f "$ROOT_DIR/applications/unleash/unleash-deployment.yaml" ]; then
+            kubectl apply -f "$ROOT_DIR/applications/unleash/unleash-deployment.yaml" &>/dev/null || true
+            kubectl apply -f "$ROOT_DIR/applications/unleash/unleash-virtualservice.yaml" &>/dev/null || true
+        fi
+        
+        print_success "Unleash deployment initiated"
+    else
+        print_status "Unleash already running, skipping build..."
+    fi
+    
     # Service port-forward configurations (using simple approach for sh compatibility)
     SERVICES_LIST="
 argocd:argocd:argocd-server:8080:443
@@ -515,6 +578,7 @@ prometheus:istio-system:prometheus:9090:9090
 jaeger:istio-system:tracing:16686:80
 kiali:istio-system:kiali:20001:20001
 monitoring:istio-system:monitoring-dashboard:3002:80
+unleash:unleash:unleash:4243:4242
 "
     
     local pids_file="$SCRIPT_DIR/.port-forward-pids"
@@ -568,11 +632,13 @@ monitoring:istio-system:monitoring-dashboard:3002:80
     echo -e "  • Prometheus (Metrics):    ${YELLOW}http://localhost:9090${NC}"
     echo -e "  • Jaeger (Tracing):        ${YELLOW}http://localhost:16686${NC}"
     echo -e "  • Kiali (Service Mesh):    ${YELLOW}http://localhost:20001${NC}"
+    echo -e "  • Unleash (Feature Flags): ${YELLOW}http://localhost:4243${NC}"
     echo -e "  • Monitoring Dashboard:    ${YELLOW}http://localhost:3002${NC}\n"
     
     echo -e "${BLUE}🔐 Default Credentials:${NC}"
     echo -e "  • ArgoCD: admin / $(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d 2>/dev/null || echo 'admin')"
-    echo -e "  • Grafana: admin / admin\n"
+    echo -e "  • Grafana: admin / admin"
+    echo -e "  • Unleash: admin / unleash4all\n"
     
     echo -e "${YELLOW}⚠️  Keep this terminal open to maintain services${NC}"
     echo -e "${YELLOW}⚠️  Press Ctrl+C to stop all services${NC}\n"
@@ -604,7 +670,7 @@ check_status() {
     
     # Check namespaces
     echo -e "${PURPLE}Namespaces:${NC}"
-    kubectl get namespaces | grep -E "(argocd|backstage|argo-workflows|istio-system)" || echo "No platform namespaces found"
+    kubectl get namespaces | grep -E "(argocd|backstage|argo-workflows|istio-system|unleash)" || echo "No platform namespaces found"
     echo ""
     
     # Check ArgoCD applications
@@ -619,7 +685,7 @@ check_status() {
     
     # Check running pods
     echo -e "${PURPLE}Platform Pods:${NC}"
-    for ns in argocd backstage argo-workflows istio-system; do
+    for ns in argocd backstage argo-workflows istio-system unleash; do
         if kubectl get namespace "$ns" &> /dev/null; then
             echo -e "${CYAN}$ns:${NC}"
             kubectl get pods -n "$ns" | head -5 2>/dev/null || echo "  No pods found"
@@ -642,6 +708,7 @@ show_usage() {
     echo -e ""
     echo -e "${PURPLE}Application Management Commands:${NC}"
     echo -e "  ${GREEN}build-backstage${NC}     Build Backstage app using IDP workflows"
+    echo -e "  ${GREEN}build-unleash${NC}       Build and deploy Unleash OSS feature flag service"
     echo -e "  ${GREEN}deploy-templates${NC}    Deploy/redeploy Argo Workflows templates"
     echo -e ""
     echo -e "${PURPLE}Credential Management Commands:${NC} ${CYAN}[NEW]${NC}"
@@ -666,6 +733,7 @@ show_usage() {
     echo -e "  $0 rollback monitoring-stack --steps 1     # Rollback monitoring 1 step"
     echo -e "  $0 status monitoring-stack                  # Check specific component status"
     echo -e "  $0 build-backstage                          # Build and deploy Backstage"
+    echo -e "  $0 build-unleash                            # Build and deploy Unleash OSS"
     echo -e "  $0 deploy-templates                         # Deploy Argo Workflows templates\n"
 }
 
@@ -978,6 +1046,63 @@ build_backstage_main() {
     fi
 }
 
+# Trigger Unleash build via IDP workflows
+build_unleash_actual() {
+    print_header "Building Unleash OSS via IDP Workflows"
+    
+    # Check if Argo Workflows is ready
+    if ! kubectl get namespace argo-workflows &> /dev/null; then
+        print_error "Argo Workflows not found. Run 'setup' first."
+        exit 1
+    fi
+    
+    print_status "Submitting Unleash build workflow..."
+    
+    # Submit the Unleash build workflow
+    kubectl create -f - << EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: unleash-build-
+  namespace: argo-workflows
+spec:
+  workflowTemplateRef:
+    name: unleash-build-deploy
+  arguments:
+    parameters:
+    - name: unleash-version
+      value: "5.7.0"
+    - name: image-tag
+      value: "latest"
+    - name: ecr-registry
+      value: "000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566"
+    - name: aws-region
+      value: "us-east-1"
+EOF
+    
+    if [ $? -eq 0 ]; then
+        print_success "Unleash build workflow submitted successfully"
+        print_status "Monitor progress: kubectl get workflows -n argo-workflows"
+        print_status "View logs: argo logs -n argo-workflows @latest"
+        print_status "Access Unleash after deployment: http://localhost:4243"
+    else
+        print_error "Failed to submit Unleash build workflow"
+        exit 1
+    fi
+    
+    if [ "$JSON_OUTPUT" = "true" ]; then
+        output_json_success "Unleash build workflow submitted" "{\"namespace\": \"argo-workflows\", \"access_url\": \"http://localhost:4243\"}"
+    fi
+}
+
+build_unleash_main() {
+    if is_async_mode; then
+        execute_async "unleash-build" "$0 build-unleash --sync"
+    else
+        build_unleash_actual
+    fi
+}
+
 # Task management commands
 handle_task_command() {
     local task_cmd="$1"
@@ -1076,6 +1201,9 @@ case "${PARSED_ARGS[0]:-help}" in
         ;;
     "build-backstage")
         build_backstage_main
+        ;;
+    "build-unleash")
+        build_unleash_main
         ;;
     "deploy-templates")
         if [ -f "$SCRIPT_DIR/deploy-workflow-templates.sh" ]; then

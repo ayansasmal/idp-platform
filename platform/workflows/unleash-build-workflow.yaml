@@ -1,0 +1,419 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: unleash-build-deploy
+  namespace: argo-workflows
+  labels:
+    app: argo-workflows
+    template-type: unleash-build
+spec:
+  entrypoint: build-and-deploy-unleash
+  arguments:
+    parameters:
+    - name: unleash-version
+      value: "5.7.0"
+    - name: image-tag
+      value: "latest"
+    - name: ecr-registry
+      value: "000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566"
+    - name: aws-region
+      value: "us-east-1"
+  templates:
+  - name: build-and-deploy-unleash
+    steps:
+    - - name: prepare-unleash-source
+        template: prepare-source
+    - - name: build-unleash-image
+        template: build-image
+        arguments:
+          artifacts:
+          - name: unleash-source
+            from: "{{steps.prepare-unleash-source.outputs.artifacts.unleash-source}}"
+    - - name: deploy-unleash
+        template: deploy-to-cluster
+        arguments:
+          parameters:
+          - name: image-uri
+            value: "{{workflow.parameters.ecr-registry}}/unleash-oss:{{workflow.parameters.image-tag}}"
+
+  - name: prepare-source
+    outputs:
+      artifacts:
+      - name: unleash-source
+        path: /workspace
+    container:
+      image: node:18-alpine
+      command: [sh, -c]
+      args:
+        - |
+          set -e
+          
+          # Create workspace structure
+          mkdir -p /workspace
+          cd /workspace
+          
+          # Create package.json
+          cat > package.json << 'EOF'
+          {
+            "name": "unleash-server",
+            "version": "{{workflow.parameters.unleash-version}}",
+            "description": "Unleash OSS feature flag server for IDP platform",
+            "main": "./lib/server.js",
+            "scripts": {
+              "start": "node lib/server.js",
+              "dev": "NODE_ENV=development node lib/server.js"
+            },
+            "dependencies": {
+              "unleash-server": "{{workflow.parameters.unleash-version}}"
+            },
+            "engines": {
+              "node": ">=18"
+            },
+            "license": "Apache-2.0"
+          }
+          EOF
+          
+          # Create lib directory and server.js
+          mkdir -p lib
+          cat > lib/server.js << 'EOF'
+          'use strict';
+          
+          const unleash = require('unleash-server');
+          
+          const options = {
+            db: {
+              host: process.env.DATABASE_HOST || 'unleash-postgres',
+              port: process.env.DATABASE_PORT || 5432,
+              database: process.env.DATABASE_NAME || 'unleash',
+              user: process.env.DATABASE_USER || 'unleash',
+              password: process.env.DATABASE_PASSWORD || 'unleash',
+              ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false,
+            },
+            server: {
+              host: process.env.UNLEASH_HOST || '0.0.0.0',
+              port: process.env.PORT || 4242,
+              baseUriPath: process.env.BASE_URI_PATH || '',
+              unleashUrl: process.env.UNLEASH_URL || 'http://unleash:4242',
+              enableRequestLogger: true,
+            },
+            logLevel: process.env.LOG_LEVEL || 'info',
+            enableOAS: true,
+            versionCheck: {
+              enable: false,
+            },
+            authentication: {
+              type: 'open-source',
+            },
+            ui: {
+              environment: process.env.NODE_ENV || 'production',
+            },
+          };
+          
+          console.log('Starting Unleash with configuration:', {
+            database: options.db.host + ':' + options.db.port + '/' + options.db.database,
+            server: options.server.host + ':' + options.server.port,
+            environment: options.ui.environment
+          });
+          
+          unleash.start(options).then((unleashInstance) => {
+            console.log(`Unleash started on http://localhost:${options.server.port}${options.server.baseUriPath}`);
+            console.log('Ready to serve feature flags!');
+            
+            // Graceful shutdown
+            process.on('SIGINT', () => {
+              console.log('Received SIGINT, shutting down gracefully...');
+              unleashInstance.stop().then(() => {
+                console.log('Unleash stopped');
+                process.exit(0);
+              }).catch((err) => {
+                console.error('Error stopping Unleash:', err);
+                process.exit(1);
+              });
+            });
+          }).catch((err) => {
+            console.error('Failed to start Unleash:', err);
+            process.exit(1);
+          });
+          EOF
+          
+          # Create Dockerfile
+          cat > Dockerfile << 'EOF'
+          FROM node:18-alpine
+          
+          # Install dependencies for Unleash
+          RUN apk add --no-cache postgresql-client curl
+          
+          # Create unleash user
+          RUN addgroup -g 1001 unleash && \
+              adduser -u 1001 -G unleash -s /bin/sh -D unleash
+          
+          # Set working directory
+          WORKDIR /unleash
+          
+          # Copy package files
+          COPY package*.json ./
+          
+          # Install dependencies
+          RUN npm install --production --silent
+          
+          # Copy application
+          COPY lib ./lib
+          
+          # Change ownership to unleash user
+          RUN chown -R unleash:unleash /unleash
+          
+          # Switch to unleash user
+          USER unleash
+          
+          # Expose port
+          EXPOSE 4242
+          
+          # Health check
+          HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+            CMD curl -f http://localhost:4242/health || exit 1
+          
+          # Start unleash
+          CMD ["npm", "start"]
+          EOF
+          
+          echo "Unleash source prepared successfully"
+          ls -la /workspace
+      workingDir: /workspace
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+
+  - name: build-image
+    inputs:
+      artifacts:
+      - name: unleash-source
+        path: /tmp/source
+    container:
+      image: docker:24-dind
+      command: [sh, -c]
+      args:
+        - |
+          set -e
+          
+          # Start Docker daemon
+          dockerd &
+          sleep 10
+          
+          # Install AWS CLI for ECR authentication
+          apk add --no-cache aws-cli curl
+          
+          # Configure AWS for LocalStack
+          export AWS_ACCESS_KEY_ID=test
+          export AWS_SECRET_ACCESS_KEY=test
+          export AWS_DEFAULT_REGION={{workflow.parameters.aws-region}}
+          
+          # Create ECR repository if it doesn't exist
+          echo "Creating ECR repository..."
+          aws --endpoint-url=http://localstack:4566 ecr create-repository --repository-name unleash-oss || echo "Repository might already exist"
+          
+          # Login to ECR (LocalStack)
+          echo "Logging into ECR..."
+          aws --endpoint-url=http://localstack:4566 ecr get-login-password | docker login --username AWS --password-stdin {{workflow.parameters.ecr-registry}}
+          
+          # Copy source to workspace and build Docker image
+          cp -r /tmp/source/* /workspace/
+          cd /workspace
+          echo "Building Unleash Docker image..."
+          docker build -t unleash-oss:{{workflow.parameters.image-tag}} .
+          
+          # Tag for ECR
+          docker tag unleash-oss:{{workflow.parameters.image-tag}} {{workflow.parameters.ecr-registry}}/unleash-oss:{{workflow.parameters.image-tag}}
+          
+          # Push to ECR
+          echo "Pushing image to ECR..."
+          docker push {{workflow.parameters.ecr-registry}}/unleash-oss:{{workflow.parameters.image-tag}}
+          
+          echo "Image pushed successfully: {{workflow.parameters.ecr-registry}}/unleash-oss:{{workflow.parameters.image-tag}}"
+      privileged: true
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+      - name: docker-sock
+        mountPath: /var/run/docker.sock
+      env:
+      - name: DOCKER_HOST
+        value: unix:///var/run/docker.sock
+      resources:
+        requests:
+          memory: "1Gi"
+          cpu: "500m"
+        limits:
+          memory: "2Gi"
+          cpu: "1"
+
+  - name: deploy-to-cluster
+    inputs:
+      parameters:
+      - name: image-uri
+    container:
+      image: bitnami/kubectl:latest
+      command: [sh, -c]
+      args:
+        - |
+          set -e
+          
+          echo "Creating Unleash namespace if not exists..."
+          kubectl create namespace unleash --dry-run=client -o yaml | kubectl apply -f -
+          
+          echo "Applying Unleash manifests..."
+          
+          # Apply PostgreSQL database for Unleash
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: unleash-postgres-config
+            namespace: unleash
+          data:
+            POSTGRES_DB: unleash
+            POSTGRES_USER: unleash
+            POSTGRES_PASSWORD: unleash
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: unleash-postgres
+            namespace: unleash
+            labels:
+              app: unleash-postgres
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: unleash-postgres
+            template:
+              metadata:
+                labels:
+                  app: unleash-postgres
+              spec:
+                containers:
+                - name: postgres
+                  image: postgres:15-alpine
+                  ports:
+                  - containerPort: 5432
+                  env:
+                  - name: POSTGRES_DB
+                    value: unleash
+                  - name: POSTGRES_USER
+                    value: unleash
+                  - name: POSTGRES_PASSWORD
+                    value: unleash
+                  volumeMounts:
+                  - name: postgres-storage
+                    mountPath: /var/lib/postgresql/data
+                volumes:
+                - name: postgres-storage
+                  emptyDir: {}
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: unleash-postgres
+            namespace: unleash
+          spec:
+            selector:
+              app: unleash-postgres
+            ports:
+            - port: 5432
+              targetPort: 5432
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: unleash
+            namespace: unleash
+            labels:
+              app: unleash
+              version: "{{workflow.parameters.image-tag}}"
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: unleash
+            template:
+              metadata:
+                labels:
+                  app: unleash
+                  version: "{{workflow.parameters.image-tag}}"
+              spec:
+                containers:
+                - name: unleash
+                  image: {{inputs.parameters.image-uri}}
+                  ports:
+                  - containerPort: 4242
+                  env:
+                  - name: DATABASE_HOST
+                    value: unleash-postgres
+                  - name: DATABASE_PORT
+                    value: "5432"
+                  - name: DATABASE_NAME
+                    value: unleash
+                  - name: DATABASE_USER
+                    value: unleash
+                  - name: DATABASE_PASSWORD
+                    value: unleash
+                  - name: DATABASE_SSL
+                    value: "false"
+                  - name: NODE_ENV
+                    value: production
+                  - name: LOG_LEVEL
+                    value: info
+                  - name: UNLEASH_URL
+                    value: http://unleash.unleash.svc.cluster.local:4242
+                  livenessProbe:
+                    httpGet:
+                      path: /health
+                      port: 4242
+                    initialDelaySeconds: 60
+                    periodSeconds: 30
+                  readinessProbe:
+                    httpGet:
+                      path: /health
+                      port: 4242
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                  resources:
+                    requests:
+                      memory: "512Mi"
+                      cpu: "250m"
+                    limits:
+                      memory: "1Gi"
+                      cpu: "500m"
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: unleash
+            namespace: unleash
+            labels:
+              app: unleash
+          spec:
+            selector:
+              app: unleash
+            ports:
+            - name: http
+              port: 4242
+              targetPort: 4242
+            type: ClusterIP
+          EOF
+          
+          echo "Waiting for Unleash deployment to be ready..."
+          kubectl wait --for=condition=available --timeout=300s deployment/unleash -n unleash
+          
+          echo "Unleash deployed successfully!"
+          echo "Access via: kubectl port-forward -n unleash svc/unleash 4242:4242"
+
+  volumes:
+  - name: workspace
+    emptyDir: {}
+  - name: docker-sock
+    hostPath:
+      path: /var/run/docker.sock
+      type: Socket
+
+  serviceAccountName: docker-builder

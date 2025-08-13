@@ -1,0 +1,77 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: unleash-oss
+  namespace: argocd
+  labels:
+    app: unleash-oss
+    component: feature-flags
+    managed-by: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ayansasmal/idp-platform.git
+    targetRevision: main
+    path: applications/unleash
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: unleash
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+  revisionHistoryLimit: 10
+  ignoreDifferences:
+  - group: apps
+    kind: Deployment
+    jsonPointers:
+    - /spec/replicas
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: unleash-project
+  namespace: argocd
+spec:
+  description: Unleash OSS Feature Flag Management
+  sourceRepos:
+  - 'https://github.com/ayansasmal/idp-platform.git'
+  destinations:
+  - namespace: unleash
+    server: https://kubernetes.default.svc
+  - namespace: istio-system
+    server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+  - group: ''
+    kind: Namespace
+  - group: networking.istio.io
+    kind: VirtualService
+  - group: networking.istio.io
+    kind: DestinationRule
+  namespaceResourceWhitelist:
+  - group: ''
+    kind: Service
+  - group: ''
+    kind: ConfigMap
+  - group: ''
+    kind: Secret
+  - group: ''
+    kind: PersistentVolumeClaim
+  - group: apps
+    kind: Deployment
+  - group: networking.istio.io
+    kind: VirtualService
+  - group: networking.istio.io
+    kind: DestinationRule
+  roles:
+  - name: admin
+    description: Admin privileges for Unleash project
+    policies:
+    - p, proj:unleash-project:admin, applications, *, unleash-project/*, allow
+    - p, proj:unleash-project:admin, repositories, *, *, allow
+    groups:
+    - idp-platform-admin

@@ -2,7 +2,80 @@
 
 This document outlines the critical development tasks to build a comprehensive, feature-rich, flexible, and scalable Integrated Developer Platform (IDP). The focus is on creating a robust platform with enterprise-grade capabilities before considering organizational migration strategies.
 
-## 0. Component Versioning and Rollback Capabilities (NEW - HIGH PRIORITY)
+## 0. Unleash OSS Feature Flag Service Deployment (NEW - HIGH PRIORITY)
+
+### Task Overview
+
+Deploy Unleash OSS as an out-of-the-box feature flag service within the IDP platform, providing developers with enterprise-grade feature management capabilities including feature toggles, A/B testing, and gradual rollouts.
+
+### Current State
+
+- IDP platform lacks feature flag management capabilities
+- Developers need manual feature toggle implementation
+- No centralized feature management or rollout controls
+- Missing A/B testing infrastructure for gradual deployments
+
+### Requirements
+
+#### 0.1 Unleash OSS Service Deployment
+
+- **Objective**: Deploy Unleash OSS with PostgreSQL backend as a managed IDP service
+- **Components**:
+  - **Unleash Server**: Main feature flag management service
+  - **Unleash PostgreSQL**: Dedicated database for feature flag data
+  - **Unleash Proxy**: Edge proxy for client connections
+  - **Admin UI**: Web interface for feature flag management
+
+#### 0.2 Platform Integration
+
+- **ArgoCD Application**: Deploy via GitOps with proper health checks
+- **Istio Integration**: Service mesh configuration with mTLS
+- **AWS Cognito Auth**: Single sign-on integration with platform auth
+- **Monitoring**: Prometheus metrics and Grafana dashboards
+- **Backstage Integration**: Service catalog and developer documentation
+
+#### 0.3 Developer Experience
+
+- **Out-of-the-Box**: Zero-configuration feature flag service for new applications
+- **Client SDKs**: Support for multiple programming languages
+- **Environment Management**: Dev/staging/prod feature flag separation
+- **API Access**: REST and SDK access for application integration
+
+### Deliverables
+
+1. **Docker Compose Setup**
+   - Local development configuration with PostgreSQL
+   - Container orchestration with proper networking
+   
+2. **Kubernetes Deployment**
+   - ArgoCD application manifests for GitOps deployment
+   - ConfigMaps and Secrets for configuration management
+   - Service and Ingress configurations
+   
+3. **Platform Integration**
+   - Istio VirtualService and Gateway configuration
+   - AWS Cognito OIDC integration for authentication
+   - Prometheus ServiceMonitor for metrics collection
+   
+4. **Documentation and Examples**
+   - Developer guide for using Unleash with applications
+   - Backstage service documentation and templates
+   - Feature flag best practices and patterns
+
+### Success Criteria
+
+- [ ] Unleash OSS deployed and accessible via platform authentication
+- [ ] Feature flags working in dev/staging/production environments
+- [ ] Integrated with platform monitoring and observability
+- [ ] Documentation and examples available in Backstage
+- [ ] Client SDK integration examples for common frameworks
+- [ ] Backup and recovery procedures documented
+
+### Priority
+
+**HIGH PRIORITY** - Feature flags are essential for modern application deployment patterns and will significantly enhance developer productivity and deployment safety.
+
+## 1. Component Versioning and Rollback Capabilities (HIGH PRIORITY)
 
 ### Task Overview
 
